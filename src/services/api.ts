@@ -78,33 +78,71 @@ export const api = {
       password: string
     ): Promise<{ user: UserProfile | null; error: string | null; isUnconfirmedEmail?: boolean }> {
       try {
-        let email = identifier.trim();
+        const cleanIdentifier = identifier.trim();
 
-        // If identifier does not have '@', safely resolve the username to email via RPC with password auth
-        if (!identifier.includes('@')) {
-          const { data: resolvedEmail, error: rpcError } = await supabase.rpc(
-            'resolve_username_to_email',
-            { p_username: identifier.trim(), p_password: password }
-          );
+        // 1. Direct Email Sign-In (Standard GoTrue Auth)
+        if (cleanIdentifier.includes('@')) {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: cleanIdentifier,
+            password,
+          });
 
-          if (rpcError || !resolvedEmail) {
-            return {
-              user: null,
-              error: 'Invalid username or password. Please verify your credentials.',
-            };
+          if (error) {
+            if (
+              error.message.toLowerCase().includes('email not confirmed') ||
+              error.message.toLowerCase().includes('not confirmed')
+            ) {
+              return {
+                user: null,
+                error:
+                  'Your email address has not been confirmed yet. Please verify your email before logging in.',
+                isUnconfirmedEmail: true,
+              };
+            }
+            return { user: null, error: error.message };
           }
-          email = resolvedEmail;
+
+          if (!data.user) {
+            return { user: null, error: 'Failed to retrieve authentication session.' };
+          }
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+
+          const userProfile: UserProfile = profile || {
+            id: data.user.id,
+            username: data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'student',
+            email: data.user.email || '',
+            full_name: data.user.user_metadata?.full_name || '',
+            daily_study_target_minutes: 180,
+            created_at: data.user.created_at,
+            updated_at: data.user.created_at,
+          };
+
+          return { user: userProfile, error: null };
         }
 
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        // 2. Username Sign-In via secure server-side Supabase Edge Function
+        // Solves the email enumeration vulnerability by authenticating inside the Edge Function.
+        const { data: funcData, error: funcError } = await supabase.functions.invoke(
+          'sign-in-with-username',
+          {
+            body: { username: cleanIdentifier, password },
+          }
+        );
 
-        if (error) {
+        if (funcError || !funcData || funcData.error) {
+          const errMsg =
+            funcData?.error ||
+            funcError?.message ||
+            'Invalid username or password. Please verify your credentials.';
+
           if (
-            error.message.toLowerCase().includes('email not confirmed') ||
-            error.message.toLowerCase().includes('not confirmed')
+            errMsg.toLowerCase().includes('email not confirmed') ||
+            errMsg.toLowerCase().includes('not confirmed')
           ) {
             return {
               user: null,
@@ -113,27 +151,40 @@ export const api = {
               isUnconfirmedEmail: true,
             };
           }
-          return { user: null, error: error.message };
+
+          return {
+            user: null,
+            error: errMsg,
+          };
         }
 
-        if (!data.user) {
-          return { user: null, error: 'Failed to retrieve authentication session.' };
+        // Establish the returned session in the client
+        if (funcData.session) {
+          await supabase.auth.setSession({
+            access_token: funcData.session.access_token,
+            refresh_token: funcData.session.refresh_token,
+          });
+        }
+
+        const userObj = funcData.user || funcData.session?.user;
+        if (!userObj) {
+          return { user: null, error: 'Failed to establish user session.' };
         }
 
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', data.user.id)
+          .eq('id', userObj.id)
           .maybeSingle();
 
         const userProfile: UserProfile = profile || {
-          id: data.user.id,
-          username: data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'student',
-          email: data.user.email || '',
-          full_name: data.user.user_metadata?.full_name || '',
+          id: userObj.id,
+          username: userObj.user_metadata?.username || cleanIdentifier,
+          email: userObj.email || '',
+          full_name: userObj.user_metadata?.full_name || '',
           daily_study_target_minutes: 180,
-          created_at: data.user.created_at,
-          updated_at: data.user.created_at,
+          created_at: userObj.created_at || new Date().toISOString(),
+          updated_at: userObj.created_at || new Date().toISOString(),
         };
 
         return { user: userProfile, error: null };

@@ -370,64 +370,12 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 4.2 Secure RPC: Resolve username to email for login with password authentication
--- SECURITY NOTE: Does NOT return the email to arbitrary anonymous callers.
--- Requires p_password to match auth.users.encrypted_password via crypt().
--- Prevents anonymous email enumeration/harvesting while supporting username sign-in.
-CREATE OR REPLACE FUNCTION public.resolve_username_to_email(
-  p_username TEXT,
-  p_password TEXT DEFAULT NULL
-)
-RETURNS TEXT AS $$
-DECLARE
-  v_user_id UUID;
-  v_email TEXT;
-  v_encrypted_password TEXT;
-BEGIN
-  -- Strict input validation
-  IF p_username IS NULL OR TRIM(p_username) = '' THEN
-    RETURN NULL;
-  END IF;
-
-  -- Locate matching profile ID (case-insensitive)
-  SELECT id INTO v_user_id
-  FROM public.profiles
-  WHERE LOWER(username) = LOWER(TRIM(p_username))
-  LIMIT 1;
-
-  IF v_user_id IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  -- Retrieve email and encrypted password hash from auth.users
-  SELECT email, encrypted_password INTO v_email, v_encrypted_password
-  FROM auth.users
-  WHERE id = v_user_id;
-
-  -- Password authentication verification:
-  -- Only return email if caller provides the valid password matching the hash
-  IF p_password IS NOT NULL AND v_encrypted_password IS NOT NULL THEN
-    BEGIN
-      IF extensions.crypt(p_password, v_encrypted_password) = v_encrypted_password THEN
-        RETURN v_email;
-      END IF;
-    EXCEPTION WHEN OTHERS THEN
-      BEGIN
-        IF public.crypt(p_password, v_encrypted_password) = v_encrypted_password THEN
-          RETURN v_email;
-        END IF;
-      EXCEPTION WHEN OTHERS THEN
-        RETURN NULL;
-      END;
-    END;
-  END IF;
-
-  -- Default: never leak email to unauthenticated callers
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, extensions;
-
-GRANT EXECUTE ON FUNCTION public.resolve_username_to_email(TEXT, TEXT) TO anon, authenticated, service_role;
+-- 4.2 Deprecated RPC Cleanup
+-- NOTE: Username sign-in is handled server-side via the Supabase Edge Function
+-- (supabase/functions/sign-in-with-username), ensuring users' email addresses
+-- are NEVER exposed through public RPC functions or direct database access.
+DROP FUNCTION IF EXISTS public.resolve_username_to_email(TEXT);
+DROP FUNCTION IF EXISTS public.resolve_username_to_email(TEXT, TEXT);
 
 -- 4.3 Secure RPC: Check username availability for real-time registration validation
 -- Only returns boolean (true if free, false if taken). Never reveals user metadata or email.

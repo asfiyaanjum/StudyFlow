@@ -98,6 +98,34 @@ vi.mock('./supabaseClient', () => {
         resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
         updateUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         resend: vi.fn().mockResolvedValue({ error: null }),
+        setSession: vi.fn().mockResolvedValue({ data: { session: null, user: null }, error: null }),
+      },
+      functions: {
+        invoke: vi.fn().mockImplementation((funcName, { body }) => {
+          if (funcName === 'sign-in-with-username') {
+            if (
+              body.username.toLowerCase() === 'alex_chen' &&
+              body.password === 'correct_password'
+            ) {
+              return Promise.resolve({
+                data: {
+                  session: {
+                    access_token: 'mock-access-token',
+                    refresh_token: 'mock-refresh-token',
+                    user: mockUser,
+                  },
+                  user: mockUser,
+                },
+                error: null,
+              });
+            }
+            return Promise.resolve({
+              data: { error: 'Invalid username or password. Please verify your credentials.' },
+              error: null,
+            });
+          }
+          return Promise.resolve({ data: null, error: new Error('Function not found') });
+        }),
       },
       rpc: vi.fn().mockImplementation((funcName, args) => {
         if (funcName === 'resolve_username_to_email') {
@@ -204,13 +232,16 @@ describe('Supabase Authentication & RPC Integration', () => {
     expect(res.user?.email).toBe('alex.chen@university.edu');
   });
 
-  it('securely resolves username to email via RPC before signing in', async () => {
+  it('securely authenticates username via Supabase Edge Function without exposing email', async () => {
     const res = await api.auth.signIn('alex_chen', 'correct_password');
-    expect(supabase.rpc).toHaveBeenCalledWith('resolve_username_to_email', {
-      p_username: 'alex_chen',
-      p_password: 'correct_password',
+    expect(supabase.functions.invoke).toHaveBeenCalledWith('sign-in-with-username', {
+      body: {
+        username: 'alex_chen',
+        password: 'correct_password',
+      },
     });
     expect(res.error).toBeNull();
+    expect(res.user?.username).toBe('alex_chen');
     expect(res.user?.email).toBe('alex.chen@university.edu');
   });
 

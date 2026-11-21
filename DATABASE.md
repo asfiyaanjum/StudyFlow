@@ -58,7 +58,27 @@ This guide provides step-by-step instructions to configure your **new Supabase p
   - `on_auth_user_created`: Automatically creates a `profiles` row and default `user_settings` when a new student signs up in `auth.users`.
 - **Secure Stored Procedures (RPC)**:
   - `is_username_available(check_username)`: Safe lookup to check handle availability without exposing any user data.
-  - `resolve_username_to_email(p_username)`: Secure `SECURITY DEFINER` lookup allowing users to log in with their username without public email enumeration.
+- **Edge Functions**:
+  - `sign-in-with-username`: Secure server-side Edge Function (`supabase/functions/sign-in-with-username/index.ts`) that resolves the student's username to email and authenticates via Supabase Auth without exposing emails to public RPCs.
+
+---
+
+## 4. (Optional) Deploy Username Sign-in Edge Function
+
+StudyFlow supports signing in with either email or username. While email sign-in works immediately through standard Supabase Auth, username sign-in is processed securely via a Supabase Edge Function to protect student privacy and avoid public email enumeration.
+
+To deploy the function to your Supabase project:
+```bash
+# Login to Supabase CLI (if not already logged in)
+npx supabase login
+
+# Link your local project to your Supabase project ref
+npx supabase link --project-ref <your-project-id>
+
+# Deploy the Edge Function
+npx supabase functions deploy sign-in-with-username
+```
+*(Note: If you do not deploy the Edge Function, students can simply log in using their registered email address!)*
 
 ---
 
