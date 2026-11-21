@@ -1,16 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { MailCheck, ArrowRight, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../context/ToastContext';
+import { api } from '../../services/api';
 
 export const VerifyEmailPage: React.FC = () => {
   const [params] = useSearchParams();
   const email = params.get('email') || 'your email address';
-  const { info } = useToast();
+  const { success, error: toastError } = useToast();
+  const [resending, setResending] = useState(false);
 
-  const handleResend = () => {
-    info('Verification Link Sent', `A new verification email has been sent to ${email}.`);
+  const handleResend = async () => {
+    if (!email || email === 'your email address') {
+      toastError('Error', 'Please provide a valid email address.');
+      return;
+    }
+    setResending(true);
+    try {
+      const res = await api.auth.resendVerificationEmail(email);
+      if (res.success) {
+        success('Verification Link Sent', `A fresh activation link has been sent to ${email}.`);
+      } else {
+        toastError('Failed to Resend', res.error || 'Please try again later.');
+      }
+    } catch (err: any) {
+      toastError('Error', err.message);
+    } finally {
+      setResending(false);
+    }
   };
 
   return (
@@ -53,6 +71,7 @@ export const VerifyEmailPage: React.FC = () => {
             size="sm"
             className="w-full text-xs"
             onClick={handleResend}
+            isLoading={resending}
             leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
           >
             Resend Verification Email

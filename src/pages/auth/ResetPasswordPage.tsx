@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { GraduationCap, Lock, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { GraduationCap, Lock, CheckCircle2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { api } from '../../services/api';
+import { supabase } from '../../services/supabaseClient';
 import { useToast } from '../../context/ToastContext';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -14,6 +15,17 @@ export const ResetPasswordPage: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [validLink, setValidLink] = useState(true);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    const hasRecoveryHash = hash.includes('access_token') || hash.includes('type=recovery');
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session && !hasRecoveryHash) {
+        setValidLink(false);
+      }
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +70,19 @@ export const ResetPasswordPage: React.FC = () => {
           </p>
         </div>
 
-        {done ? (
+        {!validLink ? (
+          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-center space-y-3">
+            <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+            <p className="text-xs text-amber-800 dark:text-amber-200 font-medium">
+              Invalid or expired recovery link. Password reset links can only be used once and expire after a limited time.
+            </p>
+            <Link to="/forgot-password" className="block pt-1">
+              <Button size="sm" variant="outline" className="w-full" leftIcon={<ArrowLeft className="w-4 h-4" />}>
+                Request New Recovery Link
+              </Button>
+            </Link>
+          </div>
+        ) : done ? (
           <div className="text-center space-y-4 py-4">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
             <p className="text-sm font-semibold text-slate-900 dark:text-white">

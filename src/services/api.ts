@@ -1,5 +1,4 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { MockStorage } from './mockStorage';
 import {
   UserProfile,
   UserSettings,
@@ -18,95 +17,129 @@ import {
 import { isDateToday } from '../utils/dateUtils';
 
 /**
- * StudyFlow Unified Service Layer
- * Seamlessly interfaces with Supabase with complete local persistence fallback
+ * Helper to ensure user is authenticated before performing operations
+ */
+const requireAuthUser = async () => {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    throw new Error('Authentication required. Please sign in to continue.');
+  }
+  return user;
+};
+
+/**
+ * StudyFlow Production API Service Layer
+ * All operations execute directly against Supabase PostgreSQL with Row-Level Security
  */
 export const api = {
   // --------------------------------------------------------------------------
-  // AUTHENTICATION & PROFILE
+  // 1. AUTHENTICATION & PROFILE
   // --------------------------------------------------------------------------
   auth: {
     async getCurrentUser(): Promise<UserProfile | null> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getUser();
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) return null;
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.error('Error fetching profile:', profileError);
+        }
+
+        if (!profile) {
+          // Fallback user profile derived from auth user metadata
+          const derivedUsername =
+            user.user_metadata?.username || user.email?.split('@')[0] || 'student';
+          return {
+            id: user.id,
+            username: derivedUsername,
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || derivedUsername,
+            daily_study_target_minutes: 180,
+            created_at: user.created_at,
+            updated_at: user.created_at,
+          };
+        }
+
+        return profile as UserProfile;
+      } catch (err) {
+        console.error('Failed to get current user:', err);
+        return null;
       }
-
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) return null;
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile) {
-        // Fallback default profile
-        return {
-          id: user.id,
-          username: user.user_metadata?.username || user.email?.split('@')[0] || 'student',
-          email: user.email || '',
-          full_name: user.user_metadata?.full_name || '',
-          daily_study_target_minutes: 180,
-          created_at: user.created_at,
-          updated_at: user.created_at,
-        };
-      }
-
-      return profile as UserProfile;
     },
 
-    async signIn(identifier: string, password: string):Promise<{ user: UserProfile | null; error: string | null }> {
-      if (!isSupabaseConfigured()) {
-        const user = MockStorage.getUser();
-        if (
-          (identifier.toLowerCase() === user.username.toLowerCase() ||
-           identifier.toLowerCase() === user.email.toLowerCase()) &&
-          password.length >= 6
-        ) {
-          return { user, error: null };
+    async signIn(
+      identifier: string,
+      password: string
+    ): Promise<{ user: UserProfile | null; error: string | null; isUnconfirmedEmail?: boolean }> {
+      try {
+        let email = identifier.trim();
+
+        // If identifier does not have '@', safely resolve the username to email via RPC
+        if (!identifier.includes('@')) {
+          const { data: resolvedEmail, error: rpcError } = await supabase.rpc(
+            'resolve_username_to_email',
+            { p_username: identifier.trim() }
+          );
+
+          if (rpcError || !resolvedEmail) {
+            return {
+              user: null,
+              error: 'Invalid username or password. Please verify your credentials.',
+            };
+          }
+          email = resolvedEmail;
         }
-        if (password.length < 6) {
-          return { user: null, error: 'Password must be at least 6 characters.' };
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          if (
+            error.message.toLowerCase().includes('email not confirmed') ||
+            error.message.toLowerCase().includes('not confirmed')
+          ) {
+            return {
+              user: null,
+              error:
+                'Your email address has not been confirmed yet. Please verify your email before logging in.',
+              isUnconfirmedEmail: true,
+            };
+          }
+          return { user: null, error: error.message };
         }
-        // Generic error to prevent enumeration
-        return { user: null, error: 'Invalid username/email or password.' };
-      }
 
-      let email = identifier;
-
-      // If user provided a username rather than an email, resolve it securely
-      if (!identifier.includes('@')) {
-        const { data: resolvedEmail, error: rpcError } = await supabase.rpc(
-          'resolve_username_to_email',
-          { p_username: identifier }
-        );
-
-        if (rpcError || !resolvedEmail) {
-          return { user: null, error: 'Invalid username or password.' };
+        if (!data.user) {
+          return { user: null, error: 'Failed to retrieve authentication session.' };
         }
-        email = resolvedEmail;
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        const userProfile: UserProfile = profile || {
+          id: data.user.id,
+          username: data.user.user_metadata?.username || data.user.email?.split('@')[0] || 'student',
+          email: data.user.email || '',
+          full_name: data.user.user_metadata?.full_name || '',
+          daily_study_target_minutes: 180,
+          created_at: data.user.created_at,
+          updated_at: data.user.created_at,
+        };
+
+        return { user: userProfile, error: null };
+      } catch (err: any) {
+        return { user: null, error: err.message || 'An unexpected authentication error occurred.' };
       }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        return { user: null, error: error.message };
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .single();
-
-      return {
-        user: profile as UserProfile,
-        error: null,
-      };
     },
 
     async signUp(
@@ -115,92 +148,113 @@ export const api = {
       password: string,
       fullName?: string
     ): Promise<{ user: UserProfile | null; error: string | null; emailConfirmationRequired: boolean }> {
-      if (!isSupabaseConfigured()) {
-        const newUser: UserProfile = {
-          id: `user_${Date.now()}`,
-          username: username.toLowerCase().trim(),
-          email: email.toLowerCase().trim(),
-          full_name: fullName || username,
+      try {
+        const cleanUsername = username.toLowerCase().trim();
+        const cleanEmail = email.toLowerCase().trim();
+
+        // 1. Check username availability via secure RPC
+        const { data: isAvailable, error: checkError } = await supabase.rpc(
+          'is_username_available',
+          { p_username: cleanUsername }
+        );
+
+        if (checkError) {
+          console.warn('Username check warning:', checkError);
+        } else if (isAvailable === false) {
+          return {
+            user: null,
+            error: 'Username is already taken. Please choose another username.',
+            emailConfirmationRequired: false,
+          };
+        }
+
+        // 2. Perform Supabase signup
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              username: cleanUsername,
+              full_name: fullName?.trim() || cleanUsername,
+            },
+            emailRedirectTo: `${window.location.origin}/login`,
+          },
+        });
+
+        if (error) {
+          return { user: null, error: error.message, emailConfirmationRequired: false };
+        }
+
+        const emailConfirmationRequired = !data.session;
+        const userProfile: UserProfile = {
+          id: data.user?.id || '',
+          username: cleanUsername,
+          email: cleanEmail,
+          full_name: fullName,
           daily_study_target_minutes: 180,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        MockStorage.updateUser(newUser);
-        return { user: newUser, error: null, emailConfirmationRequired: false };
+
+        return {
+          user: userProfile,
+          error: null,
+          emailConfirmationRequired,
+        };
+      } catch (err: any) {
+        return {
+          user: null,
+          error: err.message || 'Failed to complete registration.',
+          emailConfirmationRequired: false,
+        };
       }
+    },
 
-      // Check username availability
-      const { data: isAvailable } = await supabase.rpc('is_username_available', {
-        p_username: username,
-      });
-
-      if (isAvailable === false) {
-        return { user: null, error: 'Username is already taken.', emailConfirmationRequired: false };
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            username: username.toLowerCase().trim(),
-            full_name: fullName,
+    async resendVerificationEmail(email: string): Promise<{ success: boolean; error: string | null }> {
+      try {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: email.trim(),
+          options: {
+            emailRedirectTo: `${window.location.origin}/login`,
           },
-        },
-      });
-
-      if (error) {
-        return { user: null, error: error.message, emailConfirmationRequired: false };
+        });
+        return { success: !error, error: error ? error.message : null };
+      } catch (err: any) {
+        return { success: false, error: err.message };
       }
-
-      const emailConfirmationRequired = !data.session;
-      const userProfile: UserProfile = {
-        id: data.user?.id || '',
-        username,
-        email,
-        full_name: fullName,
-        daily_study_target_minutes: 180,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      return {
-        user: userProfile,
-        error: null,
-        emailConfirmationRequired,
-      };
     },
 
     async signOut(): Promise<void> {
-      if (isSupabaseConfigured()) {
+      try {
         await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Error during signOut:', err);
       }
     },
 
     async resetPassword(email: string): Promise<{ success: boolean; error: string | null }> {
-      if (!isSupabaseConfigured()) {
-        return { success: true, error: null };
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        return { success: !error, error: error ? error.message : null };
+      } catch (err: any) {
+        return { success: false, error: err.message };
       }
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      return { success: !error, error: error ? error.message : null };
     },
 
     async updatePassword(newPassword: string): Promise<{ success: boolean; error: string | null }> {
-      if (!isSupabaseConfigured()) {
-        return { success: true, error: null };
+      try {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        return { success: !error, error: error ? error.message : null };
+      } catch (err: any) {
+        return { success: false, error: err.message };
       }
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      return { success: !error, error: error ? error.message : null };
     },
 
     async updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.updateUser(updates);
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      const user = await requireAuthUser();
 
       const { data, error } = await supabase
         .from('profiles')
@@ -215,34 +269,54 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
-  // USER SETTINGS
+  // 2. USER SETTINGS
   // --------------------------------------------------------------------------
   settings: {
     async getSettings(): Promise<UserSettings> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getSettings();
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return MockStorage.getSettings();
+      const user = await requireAuthUser();
 
       const { data, error } = await supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
-        return MockStorage.getSettings();
+      if (error) {
+        console.error('Error fetching settings:', error);
       }
+
+      if (!data) {
+        // Insert initial default settings if missing
+        const { data: newSettings, error: insertError } = await supabase
+          .from('user_settings')
+          .insert({ user_id: user.id })
+          .select()
+          .single();
+
+        if (insertError) {
+          return {
+            id: 'default',
+            user_id: user.id,
+            theme: 'system',
+            time_format: '12h',
+            notification_sound: true,
+            pomodoro_focus_duration: 25,
+            pomodoro_short_break: 5,
+            pomodoro_long_break: 15,
+            pomodoro_long_break_interval: 4,
+            weekly_study_goal_hours: 20,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return newSettings as UserSettings;
+      }
+
       return data as UserSettings;
     },
 
     async updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.updateSettings(settings);
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return MockStorage.updateSettings(settings);
+      const user = await requireAuthUser();
 
       const { data, error } = await supabase
         .from('user_settings')
@@ -257,16 +331,15 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
-  // SUBJECTS & SYLLABUS
+  // 3. SUBJECTS & SYLLABUS PROGRESS
   // --------------------------------------------------------------------------
   subjects: {
     async getSubjects(): Promise<Subject[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getSubjects();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('subjects')
-        .select('*, units:syllabus_units(id, topics:syllabus_topics(id, is_completed))')
+        .select('*, units:syllabus_units(*, topics:syllabus_topics(*))')
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -275,6 +348,7 @@ export const api = {
         const units = sub.units || [];
         let topicsCount = 0;
         let completedTopicsCount = 0;
+
         units.forEach((u: any) => {
           const tops = u.topics || [];
           topicsCount += tops.length;
@@ -303,44 +377,45 @@ export const api = {
       });
     },
 
-    async createSubject(subject: Omit<Subject, 'id' | 'created_at' | 'updated_at'>): Promise<Subject> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addSubject(subject);
-      }
-      const { data, error } = await supabase.from('subjects').insert(subject).select().single();
+    async createSubject(
+      subject: Omit<Subject, 'id' | 'created_at' | 'updated_at'>
+    ): Promise<Subject> {
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...subject,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase.from('subjects').insert(payload).select().single();
       if (error) throw error;
       return data as Subject;
     },
 
     async updateSubject(id: string, updates: Partial<Subject>): Promise<Subject> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.updateSubject(id, updates);
-        if (!res) throw new Error('Subject not found');
-        return res;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('subjects')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
+
       if (error) throw error;
       return data as Subject;
     },
 
     async deleteSubject(id: string): Promise<void> {
-      if (!isSupabaseConfigured()) {
-        MockStorage.deleteSubject(id);
-        return;
-      }
+      await requireAuthUser();
+
       const { error } = await supabase.from('subjects').delete().eq('id', id);
       if (error) throw error;
     },
 
     async getSyllabus(subjectId: string): Promise<SyllabusUnit[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getSyllabusUnits(subjectId);
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('syllabus_units')
         .select('*, topics:syllabus_topics(*)')
@@ -361,30 +436,49 @@ export const api = {
       });
     },
 
-    async createUnit(unit: Omit<SyllabusUnit, 'id' | 'created_at' | 'updated_at'>): Promise<SyllabusUnit> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addSyllabusUnit(unit);
-      }
-      const { data, error } = await supabase.from('syllabus_units').insert(unit).select().single();
+    async createUnit(
+      unit: Omit<SyllabusUnit, 'id' | 'created_at' | 'updated_at'>
+    ): Promise<SyllabusUnit> {
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...unit,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase
+        .from('syllabus_units')
+        .insert(payload)
+        .select()
+        .single();
+
       if (error) throw error;
       return data as SyllabusUnit;
     },
 
-    async createTopic(topic: Omit<SyllabusTopic, 'id' | 'created_at' | 'updated_at'>): Promise<SyllabusTopic> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addSyllabusTopic(topic);
-      }
-      const { data, error } = await supabase.from('syllabus_topics').insert(topic).select().single();
+    async createTopic(
+      topic: Omit<SyllabusTopic, 'id' | 'created_at' | 'updated_at'>
+    ): Promise<SyllabusTopic> {
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...topic,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase
+        .from('syllabus_topics')
+        .insert(payload)
+        .select()
+        .single();
+
       if (error) throw error;
       return data as SyllabusTopic;
     },
 
     async toggleTopicComplete(topicId: string, isCompleted: boolean): Promise<SyllabusTopic> {
-      if (!isSupabaseConfigured()) {
-        const updated = MockStorage.toggleTopicComplete(topicId);
-        if (!updated) throw new Error('Topic not found');
-        return updated;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('syllabus_topics')
         .update({
@@ -395,68 +489,78 @@ export const api = {
         .eq('id', topicId)
         .select()
         .single();
+
       if (error) throw error;
       return data as SyllabusTopic;
     },
   },
 
   // --------------------------------------------------------------------------
-  // TASKS MANAGEMENT
+  // 4. TASKS MANAGEMENT
   // --------------------------------------------------------------------------
   tasks: {
     async getTasks(): Promise<Task[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getTasks();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('tasks')
         .select('*, subject:subjects(*)')
         .order('due_date', { ascending: true });
+
       if (error) throw error;
       return (data || []) as Task[];
     },
 
     async createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at'>): Promise<Task> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addTask(task);
-      }
-      const { data, error } = await supabase.from('tasks').insert(task).select('*, subject:subjects(*)').single();
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...task,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert(payload)
+        .select('*, subject:subjects(*)')
+        .single();
+
       if (error) throw error;
       return data as Task;
     },
 
     async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.updateTask(id, updates);
-        if (!res) throw new Error('Task not found');
-        return res;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('tasks')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select('*, subject:subjects(*)')
         .single();
+
       if (error) throw error;
       return data as Task;
     },
 
     async deleteTask(id: string): Promise<void> {
-      if (!isSupabaseConfigured()) {
-        MockStorage.deleteTask(id);
-        return;
-      }
+      await requireAuthUser();
+
       const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (error) throw error;
     },
 
     async toggleTask(id: string): Promise<Task> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.toggleTaskComplete(id);
-        if (!res) throw new Error('Task not found');
-        return res;
-      }
-      const { data: currentTask } = await supabase.from('tasks').select('is_completed').eq('id', id).single();
+      await requireAuthUser();
+
+      const { data: currentTask, error: fetchError } = await supabase
+        .from('tasks')
+        .select('is_completed')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
       const nextComplete = !currentTask?.is_completed;
 
       const { data, error } = await supabase
@@ -477,106 +581,114 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
-  // SCHEDULE / TIMETABLE
+  // 5. SCHEDULE / TIMETABLE
   // --------------------------------------------------------------------------
   schedule: {
     async getSchedule(): Promise<ScheduleItem[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getSchedule();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('schedule_items')
         .select('*, subject:subjects(*)')
         .order('start_time', { ascending: true });
+
       if (error) throw error;
       return (data || []) as ScheduleItem[];
     },
 
-    async createScheduleItem(item: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'>): Promise<ScheduleItem> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addScheduleItem(item);
-      }
+    async createScheduleItem(
+      item: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'>
+    ): Promise<ScheduleItem> {
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...item,
+        user_id: user.id,
+      };
+
       const { data, error } = await supabase
         .from('schedule_items')
-        .insert(item)
+        .insert(payload)
         .select('*, subject:subjects(*)')
         .single();
+
       if (error) throw error;
       return data as ScheduleItem;
     },
 
     async updateScheduleItem(id: string, updates: Partial<ScheduleItem>): Promise<ScheduleItem> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.updateScheduleItem(id, updates);
-        if (!res) throw new Error('Schedule item not found');
-        return res;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('schedule_items')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select('*, subject:subjects(*)')
         .single();
+
       if (error) throw error;
       return data as ScheduleItem;
     },
 
     async deleteScheduleItem(id: string): Promise<void> {
-      if (!isSupabaseConfigured()) {
-        MockStorage.deleteScheduleItem(id);
-        return;
-      }
+      await requireAuthUser();
+
       const { error } = await supabase.from('schedule_items').delete().eq('id', id);
       if (error) throw error;
     },
   },
 
   // --------------------------------------------------------------------------
-  // GOALS & PLANS
+  // 6. GOALS & PLANS
   // --------------------------------------------------------------------------
   goals: {
     async getGoals(): Promise<Goal[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getGoals();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('goals')
         .select('*, subject:subjects(*)')
         .order('target_date', { ascending: true });
+
       if (error) throw error;
       return (data || []) as Goal[];
     },
 
     async createGoal(goal: Omit<Goal, 'id' | 'created_at' | 'updated_at'>): Promise<Goal> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addGoal(goal);
-      }
-      const { data, error } = await supabase.from('goals').insert(goal).select('*, subject:subjects(*)').single();
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...goal,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase
+        .from('goals')
+        .insert(payload)
+        .select('*, subject:subjects(*)')
+        .single();
+
       if (error) throw error;
       return data as Goal;
     },
 
     async updateGoal(id: string, updates: Partial<Goal>): Promise<Goal> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.updateGoal(id, updates);
-        if (!res) throw new Error('Goal not found');
-        return res;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('goals')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select('*, subject:subjects(*)')
         .single();
+
       if (error) throw error;
       return data as Goal;
     },
 
     async deleteGoal(id: string): Promise<void> {
-      if (!isSupabaseConfigured()) {
-        MockStorage.deleteGoal(id);
-        return;
-      }
+      await requireAuthUser();
+
       const { error } = await supabase.from('goals').delete().eq('id', id);
       if (error) throw error;
     },
@@ -584,90 +696,145 @@ export const api = {
 
   plans: {
     async getPlans(): Promise<Plan[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getPlans();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('plans')
         .select('*, subject:subjects(*)')
         .order('start_date', { ascending: false });
+
       if (error) throw error;
       return (data || []) as Plan[];
     },
 
     async createPlan(plan: Omit<Plan, 'id' | 'created_at' | 'updated_at'>): Promise<Plan> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.addPlan(plan);
-      }
-      const { data, error } = await supabase.from('plans').insert(plan).select('*, subject:subjects(*)').single();
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...plan,
+        user_id: user.id,
+      };
+
+      const { data, error } = await supabase
+        .from('plans')
+        .insert(payload)
+        .select('*, subject:subjects(*)')
+        .single();
+
       if (error) throw error;
       return data as Plan;
     },
 
     async updatePlan(id: string, updates: Partial<Plan>): Promise<Plan> {
-      if (!isSupabaseConfigured()) {
-        const res = MockStorage.updatePlan(id, updates);
-        if (!res) throw new Error('Plan not found');
-        return res;
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('plans')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select('*, subject:subjects(*)')
         .single();
+
       if (error) throw error;
       return data as Plan;
     },
 
     async deletePlan(id: string): Promise<void> {
-      if (!isSupabaseConfigured()) {
-        MockStorage.deletePlan(id);
-        return;
-      }
+      await requireAuthUser();
+
       const { error } = await supabase.from('plans').delete().eq('id', id);
       if (error) throw error;
     },
   },
 
   // --------------------------------------------------------------------------
-  // FOCUS TIMER & SESSIONS
+  // 7. FOCUS TIMER & SESSIONS
   // --------------------------------------------------------------------------
   focus: {
     async getFocusSessions(): Promise<FocusSession[]> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.getFocusSessions();
-      }
+      await requireAuthUser();
+
       const { data, error } = await supabase
         .from('focus_sessions')
         .select('*, subject:subjects(*), task:tasks(*)')
         .order('completed_at', { ascending: false });
+
       if (error) throw error;
       return (data || []) as FocusSession[];
     },
 
     async logSession(session: Omit<FocusSession, 'id' | 'created_at'>): Promise<FocusSession> {
-      if (!isSupabaseConfigured()) {
-        return MockStorage.logFocusSession(session);
-      }
+      const user = await requireAuthUser();
+
+      const payload = {
+        ...session,
+        user_id: user.id,
+      };
+
       const { data, error } = await supabase
         .from('focus_sessions')
-        .insert(session)
+        .insert(payload)
         .select('*, subject:subjects(*), task:tasks(*)')
         .single();
+
       if (error) throw error;
+
+      // If attached to a task, increment task actual duration in tasks table
+      if (session.task_id) {
+        try {
+          const { data: currentTask } = await supabase
+            .from('tasks')
+            .select('actual_duration_minutes')
+            .eq('id', session.task_id)
+            .single();
+
+          if (currentTask) {
+            const nextMinutes = (currentTask.actual_duration_minutes || 0) + session.actual_minutes;
+            await supabase
+              .from('tasks')
+              .update({ actual_duration_minutes: nextMinutes })
+              .eq('id', session.task_id);
+          }
+        } catch (taskErr) {
+          console.warn('Could not increment task actual duration:', taskErr);
+        }
+      }
+
       return data as FocusSession;
     },
   },
 
   // --------------------------------------------------------------------------
-  // ANALYTICS & CONSISTENCY
+  // 8. STORAGE (AVATARS)
+  // --------------------------------------------------------------------------
+  storage: {
+    async uploadAvatar(file: File): Promise<string> {
+      const user = await requireAuthUser();
+
+      const fileExt = file.name.split('.').pop() || 'png';
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      return data.publicUrl;
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // 9. ANALYTICS & CONSISTENCY
   // --------------------------------------------------------------------------
   analytics: {
     async getOverview(): Promise<AcademicAnalyticsOverview> {
-      const tasks = await api.tasks.getTasks();
-      const sessions = await api.focus.getFocusSessions();
-      const subjects = await api.subjects.getSubjects();
+      const [tasks, sessions, subjects] = await Promise.all([
+        api.tasks.getTasks(),
+        api.focus.getFocusSessions(),
+        api.subjects.getSubjects(),
+      ]);
 
       // Today's focus minutes
       const todaySessions = sessions.filter((s) => isDateToday(s.completed_at));
@@ -682,7 +849,8 @@ export const api = {
       // Task completion rate
       const totalTasks = tasks.length;
       const completedTasks = tasks.filter((t) => t.is_completed).length;
-      const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      const taskCompletionRate =
+        totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
       // Overall syllabus completion
       let totalTopics = 0;
@@ -736,7 +904,7 @@ export const api = {
         };
       });
 
-      // Calculate streak days (consecutive days with > 0 minutes study)
+      // Calculate streak days
       let streak = 0;
       for (let i = 0; i < 30; i++) {
         const d = new Date();
@@ -746,7 +914,7 @@ export const api = {
         if (hasSession) {
           streak++;
         } else if (i > 0) {
-          break; // broke streak
+          break;
         }
       }
 
@@ -775,4 +943,3 @@ export const api = {
     },
   },
 };
-

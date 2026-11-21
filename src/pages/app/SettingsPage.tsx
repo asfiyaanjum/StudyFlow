@@ -41,6 +41,28 @@ export const SettingsPage: React.FC = () => {
 
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      toastError('File Too Large', 'Avatar image must be under 3MB.');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const publicUrl = await api.storage.uploadAvatar(file);
+      setAvatarUrl(publicUrl);
+      success('Avatar Uploaded', 'Avatar successfully uploaded to Supabase Storage.');
+    } catch (err: any) {
+      toastError('Upload Failed', err.message || 'Failed to upload avatar to Supabase Storage.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -112,8 +134,8 @@ export const SettingsPage: React.FC = () => {
                 className="w-16 h-16 rounded-full object-cover border-2 border-brand-500 shadow-md"
               />
               <div className="space-y-2">
-                <p className="text-xs text-slate-500">Choose from student presets:</p>
-                <div className="flex items-center gap-2">
+                <p className="text-xs text-slate-500">Choose preset or upload to Supabase Storage:</p>
+                <div className="flex flex-wrap items-center gap-2">
                   {AVATAR_PRESETS.map((preset, idx) => (
                     <button
                       type="button"
@@ -126,6 +148,16 @@ export const SettingsPage: React.FC = () => {
                       <img src={preset} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                      disabled={uploadingAvatar}
+                    />
+                    {uploadingAvatar ? 'Uploading...' : 'Upload Image'}
+                  </label>
                 </div>
               </div>
             </div>

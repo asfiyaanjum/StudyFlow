@@ -36,8 +36,8 @@ StudyFlow is a complete, production-grade Student Productivity and Academic Mana
 
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Lucide React icons, React Router v6
 - **Backend:** Supabase (PostgreSQL 15+, Supabase Auth, Storage, Row-Level Security)
-- **Local Persistence & Fallback:** MockStorage engine providing immediate, full-fidelity offline capabilities prior to cloud database provisioning
-- **Testing:** Vitest, React Testing Library, jsdom
+- **Local Fallback:** Automatic offline development fallback when cloud credentials are unconfigured
+- **Testing:** Vitest, React Testing Library, jsdom (29 comprehensive automated tests passing)
 - **Deployment:** Vercel (Frontend) & Supabase Cloud (Backend)
 
 ---

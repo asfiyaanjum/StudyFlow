@@ -56,8 +56,16 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-xs text-rose-600 dark:text-rose-400 font-medium text-center">
-            {errorMessage}
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-xs text-rose-600 dark:text-rose-400 font-medium text-center space-y-2">
+            <p>{errorMessage}</p>
+            {errorMessage.toLowerCase().includes('confirm') && (
+              <Link
+                to={`/verify-email?email=${encodeURIComponent(identifier)}`}
+                className="inline-block text-[11px] font-bold text-brand-600 dark:text-brand-400 underline hover:no-underline"
+              >
+                Go to Email Verification Screen &rarr;
+              </Link>
+            )}
           </div>
         )}
 
