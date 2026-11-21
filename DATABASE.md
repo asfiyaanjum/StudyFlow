@@ -98,3 +98,4 @@ The ordered migration is located at:
 [`supabase/migrations/20241121000000_initial_schema.sql`](file:///c:/Users/ASFIYA%20ANJUM/StudyFlow/supabase/migrations/20241121000000_initial_schema.sql)
 
 This script is idempotent (`CREATE TABLE IF NOT EXISTS`, `ON CONFLICT DO NOTHING`), ensuring safe additive execution on existing databases.
+

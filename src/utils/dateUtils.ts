@@ -87,3 +87,4 @@ export const getDayName = (dayIndex: number): string => {
   const days = getDaysOfWeekLabels();
   return days[dayIndex % 7] || 'Unknown';
 };
+

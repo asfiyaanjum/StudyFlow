@@ -539,3 +539,4 @@ export const GoalsPlansPage: React.FC = () => {
     </div>
   );
 };
+

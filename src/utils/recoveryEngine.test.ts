@@ -137,3 +137,4 @@ describe('StudyFlow Recovery Engine', () => {
     expect(plan.suggestions[0].suggested_new_date).not.toBe('2026-11-19');
   });
 });
+

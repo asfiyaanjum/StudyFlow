@@ -390,3 +390,4 @@ export const TimetablePage: React.FC = () => {
     </div>
   );
 };
+

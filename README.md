@@ -158,3 +158,4 @@ StudyFlow/
 ## 📜 License
 
 MIT License. Designed and engineered for students worldwide.
+

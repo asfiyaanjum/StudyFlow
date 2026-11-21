@@ -248,3 +248,4 @@ export interface AcademicAnalyticsOverview {
   upcoming_deadlines_count: number;
   overloaded_days_count: number;
 }
+

@@ -571,3 +571,4 @@ export const SubjectsPage: React.FC = () => {
     </div>
   );
 };
+

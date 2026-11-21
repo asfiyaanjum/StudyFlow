@@ -32,3 +32,4 @@ describe('Button Component', () => {
     expect(screen.getByRole('button')).toHaveClass('bg-slate-100');
   });
 });
+

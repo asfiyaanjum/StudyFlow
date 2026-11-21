@@ -1030,3 +1030,4 @@ export class MockStorage {
     return newSession;
   }
 }
+

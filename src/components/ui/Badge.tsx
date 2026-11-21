@@ -73,3 +73,4 @@ export const StatusBadge: React.FC<{ status: TaskStatus; size?: 'sm' | 'md' }> =
     </Badge>
   );
 };
+
