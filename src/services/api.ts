@@ -80,11 +80,11 @@ export const api = {
       try {
         let email = identifier.trim();
 
-        // If identifier does not have '@', safely resolve the username to email via RPC
+        // If identifier does not have '@', safely resolve the username to email via RPC with password auth
         if (!identifier.includes('@')) {
           const { data: resolvedEmail, error: rpcError } = await supabase.rpc(
             'resolve_username_to_email',
-            { p_username: identifier.trim() }
+            { p_username: identifier.trim(), p_password: password }
           );
 
           if (rpcError || !resolvedEmail) {

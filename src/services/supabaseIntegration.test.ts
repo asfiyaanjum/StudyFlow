@@ -101,7 +101,10 @@ vi.mock('./supabaseClient', () => {
       },
       rpc: vi.fn().mockImplementation((funcName, args) => {
         if (funcName === 'resolve_username_to_email') {
-          if (args.p_username.toLowerCase() === 'alex_chen') {
+          if (
+            args.p_username.toLowerCase() === 'alex_chen' &&
+            (!args.p_password || args.p_password === 'correct_password')
+          ) {
             return Promise.resolve({ data: 'alex.chen@university.edu', error: null });
           }
           return Promise.resolve({ data: null, error: null });
@@ -203,7 +206,10 @@ describe('Supabase Authentication & RPC Integration', () => {
 
   it('securely resolves username to email via RPC before signing in', async () => {
     const res = await api.auth.signIn('alex_chen', 'correct_password');
-    expect(supabase.rpc).toHaveBeenCalledWith('resolve_username_to_email', { p_username: 'alex_chen' });
+    expect(supabase.rpc).toHaveBeenCalledWith('resolve_username_to_email', {
+      p_username: 'alex_chen',
+      p_password: 'correct_password',
+    });
     expect(res.error).toBeNull();
     expect(res.user?.email).toBe('alex.chen@university.edu');
   });
@@ -277,3 +283,4 @@ describe('Supabase Database CRUD & RLS User Isolation', () => {
     expect(overview.daily_trends.length).toBe(7);
   });
 });
+

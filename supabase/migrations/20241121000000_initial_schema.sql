@@ -237,6 +237,11 @@ CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT 
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can delete own profile" ON public.profiles;
+CREATE POLICY "Users can delete own profile" 
+  ON public.profiles FOR DELETE 
+  USING (auth.uid() = id);
+
 -- 3.2 User Settings Policies
 DROP POLICY IF EXISTS "Users can manage own settings" ON public.user_settings;
 CREATE POLICY "Users can manage own settings"
@@ -357,7 +362,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth;
 
 -- Trigger attached to auth.users
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -365,32 +370,79 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 4.2 Secure RPC: Resolve username to email for login without public table exposure
-CREATE OR REPLACE FUNCTION public.resolve_username_to_email(p_username TEXT)
+-- 4.2 Secure RPC: Resolve username to email for login with password authentication
+-- SECURITY NOTE: Does NOT return the email to arbitrary anonymous callers.
+-- Requires p_password to match auth.users.encrypted_password via crypt().
+-- Prevents anonymous email enumeration/harvesting while supporting username sign-in.
+CREATE OR REPLACE FUNCTION public.resolve_username_to_email(
+  p_username TEXT,
+  p_password TEXT DEFAULT NULL
+)
 RETURNS TEXT AS $$
 DECLARE
+  v_user_id UUID;
   v_email TEXT;
+  v_encrypted_password TEXT;
 BEGIN
-  SELECT email INTO v_email
+  -- Strict input validation
+  IF p_username IS NULL OR TRIM(p_username) = '' THEN
+    RETURN NULL;
+  END IF;
+
+  -- Locate matching profile ID (case-insensitive)
+  SELECT id INTO v_user_id
   FROM public.profiles
   WHERE LOWER(username) = LOWER(TRIM(p_username))
   LIMIT 1;
 
-  RETURN v_email;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+  IF v_user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
 
-GRANT EXECUTE ON FUNCTION public.resolve_username_to_email(TEXT) TO anon, authenticated, service_role;
+  -- Retrieve email and encrypted password hash from auth.users
+  SELECT email, encrypted_password INTO v_email, v_encrypted_password
+  FROM auth.users
+  WHERE id = v_user_id;
+
+  -- Password authentication verification:
+  -- Only return email if caller provides the valid password matching the hash
+  IF p_password IS NOT NULL AND v_encrypted_password IS NOT NULL THEN
+    BEGIN
+      IF extensions.crypt(p_password, v_encrypted_password) = v_encrypted_password THEN
+        RETURN v_email;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      BEGIN
+        IF public.crypt(p_password, v_encrypted_password) = v_encrypted_password THEN
+          RETURN v_email;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        RETURN NULL;
+      END;
+    END;
+  END IF;
+
+  -- Default: never leak email to unauthenticated callers
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, extensions;
+
+GRANT EXECUTE ON FUNCTION public.resolve_username_to_email(TEXT, TEXT) TO anon, authenticated, service_role;
 
 -- 4.3 Secure RPC: Check username availability for real-time registration validation
+-- Only returns boolean (true if free, false if taken). Never reveals user metadata or email.
 CREATE OR REPLACE FUNCTION public.is_username_available(p_username TEXT)
 RETURNS BOOLEAN AS $$
 BEGIN
+  IF p_username IS NULL OR TRIM(p_username) = '' OR char_length(TRIM(p_username)) < 3 THEN
+    RETURN FALSE;
+  END IF;
+
   RETURN NOT EXISTS (
     SELECT 1 FROM public.profiles WHERE LOWER(username) = LOWER(TRIM(p_username))
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 GRANT EXECUTE ON FUNCTION public.is_username_available(TEXT) TO anon, authenticated, service_role;
 
@@ -398,42 +450,57 @@ GRANT EXECUTE ON FUNCTION public.is_username_available(TEXT) TO anon, authentica
 -- 5. STORAGE BUCKET CONFIGURATION (AVATARS)
 -- ==============================================================================
 
+-- 5.1 Create avatars bucket safely if storage schema is installed
 DO $$
 BEGIN
-  INSERT INTO storage.buckets (id, name, public)
-  VALUES ('avatars', 'avatars', true)
-  ON CONFLICT (id) DO NOTHING;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'storage' AND table_name = 'buckets'
+  ) THEN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES ('avatars', 'avatars', true)
+    ON CONFLICT (id) DO UPDATE SET public = true;
+  ELSE
+    RAISE NOTICE 'Notice: storage.buckets table does not exist; skipping automated bucket initialization.';
+  END IF;
 EXCEPTION
-  WHEN others THEN
-    NULL;
+  WHEN OTHERS THEN
+    RAISE WARNING 'Storage bucket initialization warning: %. Verify avatars bucket in Supabase dashboard.', SQLERRM;
 END $$;
 
--- Policies for avatar storage
+-- 5.2 Storage Policies for avatars bucket
 DO $$
 BEGIN
-  DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
-  CREATE POLICY "Avatar images are publicly accessible"
-    ON storage.objects FOR SELECT
-    USING (bucket_id = 'avatars');
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_schema = 'storage' AND table_name = 'objects'
+  ) THEN
+    DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
+    CREATE POLICY "Avatar images are publicly accessible"
+      ON storage.objects FOR SELECT
+      USING (bucket_id = 'avatars');
 
-  DROP POLICY IF EXISTS "Users can upload own avatar" ON storage.objects;
-  CREATE POLICY "Users can upload own avatar"
-    ON storage.objects FOR INSERT
-    WITH CHECK (
-      bucket_id = 'avatars' AND
-      auth.uid() IS NOT NULL
-    );
+    DROP POLICY IF EXISTS "Users can upload own avatar" ON storage.objects;
+    CREATE POLICY "Users can upload own avatar"
+      ON storage.objects FOR INSERT
+      WITH CHECK (
+        bucket_id = 'avatars' AND
+        auth.uid() IS NOT NULL
+      );
 
-  DROP POLICY IF EXISTS "Users can update own avatar" ON storage.objects;
-  CREATE POLICY "Users can update own avatar"
-    ON storage.objects FOR UPDATE
-    USING (bucket_id = 'avatars' AND auth.uid() IS NOT NULL);
+    DROP POLICY IF EXISTS "Users can update own avatar" ON storage.objects;
+    CREATE POLICY "Users can update own avatar"
+      ON storage.objects FOR UPDATE
+      USING (bucket_id = 'avatars' AND auth.uid() IS NOT NULL);
 
-  DROP POLICY IF EXISTS "Users can delete own avatar" ON storage.objects;
-  CREATE POLICY "Users can delete own avatar"
-    ON storage.objects FOR DELETE
-    USING (bucket_id = 'avatars' AND auth.uid() IS NOT NULL);
+    DROP POLICY IF EXISTS "Users can delete own avatar" ON storage.objects;
+    CREATE POLICY "Users can delete own avatar"
+      ON storage.objects FOR DELETE
+      USING (bucket_id = 'avatars' AND auth.uid() IS NOT NULL);
+  ELSE
+    RAISE NOTICE 'Notice: storage.objects table does not exist; skipping storage policy setup.';
+  END IF;
 EXCEPTION
-  WHEN others THEN
-    NULL;
+  WHEN OTHERS THEN
+    RAISE WARNING 'Storage policy initialization warning: %. Check Supabase Storage permissions.', SQLERRM;
 END $$;
