@@ -9,6 +9,8 @@ import {
   Edit2,
   TrendingUp,
   Award,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Goal, Plan, Subject, GoalType, PlanType } from '../../types';
@@ -17,6 +19,18 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ProgressBar } from '../../components/ui/ProgressBar';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { EmptyState } from '../../components/ui/EmptyState';
+import {
+  parsePlanMilestones,
+  serializePlanMilestones,
+  toggleMilestone,
+  addMilestone,
+  removeMilestone,
+  calculateMilestoneProgress,
+  Milestone,
+} from '../../utils/milestones';
 
 export const GoalsPlansPage: React.FC = () => {
   const { success, error: toastError } = useToast();
@@ -27,7 +41,7 @@ export const GoalsPlansPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Tab switch
-  const [activeView, setActiveView] = useState<'goals' | 'plans'>('goals');
+  const [activeView, setActiveView] = useState<'goals' | 'plans'>('plans');
 
   // Goal Modal
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
@@ -44,9 +58,12 @@ export const GoalsPlansPage: React.FC = () => {
   const [planDesc, setPlanDesc] = useState('');
   const [planType, setPlanType] = useState<PlanType>('weekly');
   const [planSubjectId, setPlanSubjectId] = useState('');
-  const [planStartDate, setPlanStartDate] = useState('');
-  const [planEndDate, setPlanEndDate] = useState('');
-  const [planContent, setPlanContent] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [planNotes, setPlanNotes] = useState('');
+
+  // Local state for inline milestone adding on plans
+  const [newMilestoneTitles, setNewMilestoneTitles] = useState<Record<string, string>>({});
 
   const loadData = async () => {
     try {
@@ -68,14 +85,17 @@ export const GoalsPlansPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const today = new Date().toISOString().split('T')[0];
+    setStartDate(today);
+    const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    setEndDate(inAWeek);
+    setTargetDate(inAWeek);
   }, []);
 
+  // Goal Handlers
   const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!goalTitle.trim()) {
-      toastError('Validation', 'Goal title is required.');
-      return;
-    }
+    if (!goalTitle.trim()) return;
 
     try {
       const created = await api.goals.createGoal({
@@ -84,13 +104,12 @@ export const GoalsPlansPage: React.FC = () => {
         description: goalDesc,
         goal_type: goalType,
         subject_id: goalSubjectId || null,
-        target_date: targetDate || new Date().toISOString().split('T')[0],
+        target_date: targetDate,
         progress_percentage: Number(progressPct),
         status: 'active',
       });
-
-      setGoals((prev) => [...prev, created]);
-      success('Goal Created', `"${goalTitle}" is now being tracked.`);
+      setGoals((prev) => [created, ...prev]);
+      success('Goal Created', `Added goal: "${goalTitle}"`);
       setIsGoalModalOpen(false);
       setGoalTitle('');
       setGoalDesc('');
@@ -99,437 +118,479 @@ export const GoalsPlansPage: React.FC = () => {
     }
   };
 
-  const handleUpdateGoalProgress = async (goalId: string, newPct: number) => {
+  const handleDeleteGoal = async (goalId: string) => {
+    if (!window.confirm('Delete this academic goal?')) return;
     try {
-      const updated = await api.goals.updateGoal(goalId, {
-        progress_percentage: newPct,
-        status: newPct >= 100 ? 'completed' : 'active',
-      });
-      setGoals((prev) => prev.map((g) => (g.id === goalId ? updated : g)));
-      if (newPct >= 100) {
-        success('Goal Achieved! 🏆', `Congratulations on completing this academic goal!`);
-      }
-    } catch (e: any) {
-      toastError('Error', e.message);
+      await api.goals.deleteGoal(goalId);
+      setGoals((prev) => prev.filter((g) => g.id !== goalId));
+      success('Goal Deleted', 'Removed goal.');
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const handleDeleteGoal = async (id: string) => {
-    if (window.confirm('Delete this goal?')) {
-      try {
-        await api.goals.deleteGoal(id);
-        setGoals((prev) => prev.filter((g) => g.id !== id));
-        success('Deleted', 'Goal removed.');
-      } catch (e: any) {
-        toastError('Error', e.message);
-      }
-    }
-  };
-
+  // Plan Handlers
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!planTitle.trim()) {
-      toastError('Validation', 'Plan title is required.');
-      return;
-    }
+    if (!planTitle.trim()) return;
 
     try {
+      const initialMilestones: Milestone[] = [
+        { id: `m-${Date.now()}-1`, title: 'Review key chapter notes', completed: false, order: 0 },
+        { id: `m-${Date.now()}-2`, title: 'Complete practice problem sets', completed: false, order: 1 },
+      ];
+      const serializedContent = serializePlanMilestones(initialMilestones, planNotes);
+
       const created = await api.plans.createPlan({
         user_id: 'user',
         title: planTitle,
         description: planDesc,
         plan_type: planType,
         subject_id: planSubjectId || null,
-        start_date: planStartDate || new Date().toISOString().split('T')[0],
-        end_date: planEndDate || new Date().toISOString().split('T')[0],
-        content: planContent,
+        start_date: startDate,
+        end_date: endDate,
+        content: serializedContent,
         is_active: true,
       });
-
       setPlans((prev) => [created, ...prev]);
-      success('Plan Created', `"${planTitle}" created.`);
+      success('Study Plan Created', `Created plan: "${planTitle}"`);
       setIsPlanModalOpen(false);
       setPlanTitle('');
-      setPlanContent('');
+      setPlanDesc('');
+      setPlanNotes('');
     } catch (err: any) {
       toastError('Error', err.message);
     }
   };
 
-  const handleDeletePlan = async (id: string) => {
-    if (window.confirm('Delete this plan?')) {
-      try {
-        await api.plans.deletePlan(id);
-        setPlans((prev) => prev.filter((p) => p.id !== id));
-        success('Deleted', 'Plan removed.');
-      } catch (e: any) {
-        toastError('Error', e.message);
-      }
+  const handleDeletePlan = async (planId: string) => {
+    if (!window.confirm('Delete this study plan?')) return;
+    try {
+      await api.plans.deletePlan(planId);
+      setPlans((prev) => prev.filter((p) => p.id !== planId));
+      success('Plan Deleted', 'Removed study plan.');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Milestone persistence toggling inside plans.content (Zero schema changes!)
+  const handleTogglePlanMilestone = async (plan: Plan, milestoneId: string) => {
+    const { notes, milestones } = parsePlanMilestones(plan.content);
+    const updatedMilestones = toggleMilestone(milestones, milestoneId);
+    const updatedContent = serializePlanMilestones(updatedMilestones, notes);
+
+    // Optimistic UI update
+    setPlans((prev) =>
+      prev.map((p) => (p.id === plan.id ? { ...p, content: updatedContent } : p))
+    );
+
+    try {
+      await api.plans.updatePlan(plan.id, { content: updatedContent });
+    } catch (e) {
+      console.error('Failed to save milestone:', e);
+      loadData(); // Revert on failure
+    }
+  };
+
+  const handleAddPlanMilestone = async (plan: Plan, e: React.FormEvent) => {
+    e.preventDefault();
+    const titleText = (newMilestoneTitles[plan.id] || '').trim();
+    if (!titleText) return;
+
+    const { notes, milestones } = parsePlanMilestones(plan.content);
+    const updatedMilestones = addMilestone(milestones, titleText);
+    const updatedContent = serializePlanMilestones(updatedMilestones, notes);
+
+    setNewMilestoneTitles((prev) => ({ ...prev, [plan.id]: '' }));
+    setPlans((prev) =>
+      prev.map((p) => (p.id === plan.id ? { ...p, content: updatedContent } : p))
+    );
+
+    try {
+      await api.plans.updatePlan(plan.id, { content: updatedContent });
+    } catch (e) {
+      console.error('Failed to add milestone:', e);
+      loadData();
     }
   };
 
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-paper-border dark:border-slate-800 pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Academic Goals & Blueprint Plans
+          <h1 className="font-editorial text-3xl font-medium text-charcoal-primary dark:text-white tracking-tight">
+            Academic Goals & Study Plans
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Set ambitious semester targets, grade goals, and structured study blueprints.
+          <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400 mt-0.5">
+            Set target semester milestones and execute multi-day revision plans.
           </p>
         </div>
-
         <div className="flex items-center gap-2">
-          {activeView === 'goals' ? (
-            <Button onClick={() => setIsGoalModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
-              New Goal
+          {activeView === 'plans' ? (
+            <Button onClick={() => setIsPlanModalOpen(true)} leftIcon={<Plus size={16} />}>
+              Create Study Plan
             </Button>
           ) : (
-            <Button onClick={() => setIsPlanModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
-              New Study Plan
+            <Button onClick={() => setIsGoalModalOpen(true)} leftIcon={<Plus size={16} />}>
+              Set Academic Goal
             </Button>
           )}
         </div>
       </div>
 
-      {/* View Switcher */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveView('goals')}
-          className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors flex items-center gap-2 ${
-            activeView === 'goals'
-              ? 'bg-brand-50 dark:bg-brand-950 text-brand-600 dark:text-brand-400'
-              : 'text-slate-500 hover:text-slate-900'
-          }`}
-        >
-          <Target className="w-4 h-4" />
-          Academic Goals ({goals.length})
-        </button>
+      {/* View Switcher Tabs */}
+      <div className="flex items-center gap-2 border-b border-paper-border dark:border-slate-800 pb-1 text-xs">
         <button
           onClick={() => setActiveView('plans')}
-          className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors flex items-center gap-2 ${
+          className={`px-4 py-2 rounded-xl font-medium transition-all ${
             activeView === 'plans'
-              ? 'bg-brand-50 dark:bg-brand-950 text-brand-600 dark:text-brand-400'
-              : 'text-slate-500 hover:text-slate-900'
+              ? 'bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-semibold border border-brand-200 dark:border-brand-800'
+              : 'text-charcoal-muted hover:text-charcoal-primary'
           }`}
         >
-          <FileText className="w-4 h-4" />
           Study Plans ({plans.length})
+        </button>
+        <button
+          onClick={() => setActiveView('goals')}
+          className={`px-4 py-2 rounded-xl font-medium transition-all ${
+            activeView === 'goals'
+              ? 'bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300 font-semibold border border-brand-200 dark:border-brand-800'
+              : 'text-charcoal-muted hover:text-charcoal-primary'
+          }`}
+        >
+          Semester Goals ({goals.length})
         </button>
       </div>
 
+      {/* PLANS VIEW */}
+      {activeView === 'plans' && (
+        <div className="space-y-4">
+          {plans.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="No study plans created"
+              subtitle="Map out your weekly revision or subject mastery plans with granular sub-milestones."
+              action={
+                <Button size="sm" onClick={() => setIsPlanModalOpen(true)}>
+                  + Create First Study Plan
+                </Button>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {plans.map((plan) => {
+                const { notes, milestones } = parsePlanMilestones(plan.content);
+                const progress = calculateMilestoneProgress(milestones);
+
+                return (
+                  <div
+                    key={plan.id}
+                    className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 shadow-xs space-y-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 border-b border-paper-border dark:border-slate-800 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
+                            {plan.plan_type.replace('_', ' ')}
+                          </span>
+                          {plan.subject && (
+                            <span className="text-[11px] font-medium text-brand-600">
+                              {plan.subject.name}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="font-editorial text-xl font-medium text-charcoal-primary dark:text-white mt-1">
+                          {plan.title}
+                        </h3>
+                        {plan.description && (
+                          <p className="text-xs text-charcoal-muted dark:text-slate-400 mt-0.5">
+                            {plan.description}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePlan(plan.id)}
+                        className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
+                        title="Delete Plan"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-charcoal-muted">Execution Progress</span>
+                        <span className="font-semibold text-brand-600">{progress}%</span>
+                      </div>
+                      <ProgressBar value={progress} size="xs" variant="brand" />
+                    </div>
+
+                    {/* Interactive Sub-Milestones */}
+                    <div className="space-y-2 pt-1">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light block">
+                        Milestones ({milestones.filter((m) => m.completed).length}/{milestones.length})
+                      </span>
+
+                      <div className="space-y-1.5">
+                        {milestones.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition-colors ${
+                              m.completed
+                                ? 'bg-paper-canvas/80 border-paper-border line-through text-charcoal-muted'
+                                : 'bg-white dark:bg-slate-900 border-paper-border text-charcoal-primary'
+                            }`}
+                          >
+                            <Checkbox
+                              checked={m.completed}
+                              onChange={() => handleTogglePlanMilestone(plan, m.id)}
+                              label={m.title}
+                            />
+                            <span className="text-[10px] text-charcoal-light shrink-0">
+                              {m.completed ? 'Done' : 'Pending'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Add Sub-Milestone Form */}
+                      <form
+                        onSubmit={(e) => handleAddPlanMilestone(plan, e)}
+                        className="flex gap-2 pt-2"
+                      >
+                        <input
+                          type="text"
+                          placeholder="Add a milestone (e.g., 'Chapter 4 summary')..."
+                          value={newMilestoneTitles[plan.id] || ''}
+                          onChange={(e) =>
+                            setNewMilestoneTitles((prev) => ({ ...prev, [plan.id]: e.target.value }))
+                          }
+                          className="flex-1 rounded-xl border border-paper-border px-3 py-1.5 text-xs bg-paper-canvas dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium"
+                        >
+                          Add
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="pt-2 border-t border-paper-border text-[11px] text-charcoal-light flex justify-between">
+                      <span>Timeline: {plan.start_date.split('T')[0]} to {plan.end_date.split('T')[0]}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* GOALS VIEW */}
       {activeView === 'goals' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {goals.map((goal) => {
-            const isDone = goal.progress_percentage >= 100;
-
-            return (
-              <Card
-                key={goal.id}
-                className={`p-6 flex flex-col justify-between space-y-4 ${
-                  isDone ? 'border-emerald-500/50 bg-emerald-50/20 dark:bg-emerald-950/20' : ''
-                }`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                      {goal.goal_type.replace('_', ' ')}
-                    </span>
+        <div className="space-y-4">
+          {goals.length === 0 ? (
+            <EmptyState
+              icon={Target}
+              title="No semester goals set"
+              subtitle="Define target test scores, weekly study hours, or GPA milestones to stay focused."
+              action={
+                <Button size="sm" onClick={() => setIsGoalModalOpen(true)}>
+                  + Set First Goal
+                </Button>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {goals.map((goal) => (
+                <div
+                  key={goal.id}
+                  className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 shadow-xs space-y-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                        {goal.goal_type.replace('_', ' ')}
+                      </span>
+                      <h4 className="font-editorial text-lg font-medium text-charcoal-primary dark:text-white mt-1">
+                        {goal.title}
+                      </h4>
+                    </div>
                     <button
+                      type="button"
                       onClick={() => handleDeleteGoal(goal.id)}
-                      className="text-slate-400 hover:text-rose-500 p-1"
+                      className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 size={13} />
                     </button>
                   </div>
 
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
-                      {goal.title}
-                    </h3>
-                    {goal.subject && (
-                      <span
-                        className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold text-white"
-                        style={{ backgroundColor: goal.subject.color }}
-                      >
-                        {goal.subject.code || goal.subject.name}
-                      </span>
-                    )}
-                  </div>
-
                   {goal.description && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <p className="text-xs text-charcoal-muted dark:text-slate-400">
                       {goal.description}
                     </p>
                   )}
-                </div>
 
-                {/* Progress bar & slider */}
-                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-semibold text-slate-500">Target: {goal.target_date}</span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {goal.progress_percentage}%
-                    </span>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-charcoal-muted">Progress</span>
+                      <span className="font-semibold text-brand-600">{goal.progress_percentage}%</span>
+                    </div>
+                    <ProgressBar value={goal.progress_percentage} size="xs" variant="brand" />
                   </div>
 
-                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        isDone ? 'bg-emerald-500' : 'bg-brand-600'
-                      }`}
-                      style={{ width: `${goal.progress_percentage}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={goal.progress_percentage}
-                      onChange={(e) => handleUpdateGoalProgress(goal.id, Number(e.target.value))}
-                      className="w-full accent-brand-600 h-1 cursor-pointer"
-                    />
+                  <div className="pt-2 border-t border-paper-border text-[11px] text-charcoal-light flex justify-between">
+                    <span>Target Date: {goal.target_date.split('T')[0]}</span>
+                    <span className="capitalize">{goal.status}</span>
                   </div>
                 </div>
-              </Card>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* PLANS VIEW */}
-      {activeView === 'plans' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {plans.map((plan) => (
-            <Card key={plan.id} className="p-6 space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-brand-50 dark:bg-brand-950 text-brand-600 dark:text-brand-300">
-                      {plan.plan_type.replace('_', ' ')}
-                    </span>
-                    {plan.subject && (
-                      <span
-                        className="px-2 py-0.5 rounded text-[10px] font-semibold text-white"
-                        style={{ backgroundColor: plan.subject.color }}
-                      >
-                        {plan.subject.code || plan.subject.name}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-1.5">
-                    {plan.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {plan.start_date} to {plan.end_date}
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleDeletePlan(plan.id)}
-                  className="text-slate-400 hover:text-rose-500 p-1"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {plan.description && (
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {plan.description}
-                </p>
-              )}
-
-              {plan.content && (
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs font-mono whitespace-pre-wrap text-slate-700 dark:text-slate-300">
-                  {plan.content}
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Create Goal Modal */}
+      {/* Goal Modal */}
       <Modal
         isOpen={isGoalModalOpen}
         onClose={() => setIsGoalModalOpen(false)}
-        title="Create Academic Goal"
-        description="Set measurable academic milestones."
+        title="Set Academic Goal"
+        description="Establish a clear semester benchmark."
       >
-        <form onSubmit={handleCreateGoal} className="space-y-4 pt-2">
+        <form onSubmit={handleCreateGoal} className="space-y-4">
           <Input
             label="Goal Title"
-            placeholder="e.g. Score 90%+ on Midterm Exam"
+            required
+            placeholder="e.g. Score 90%+ in Operating Systems Midterm"
             value={goalTitle}
             onChange={(e) => setGoalTitle(e.target.value)}
-            required
           />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
+          <Input
+            label="Description"
+            placeholder="Describe your strategy or benchmarks..."
+            value={goalDesc}
+            onChange={(e) => setGoalDesc(e.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-charcoal-primary dark:text-slate-300 tracking-wide uppercase mb-1.5">
                 Goal Type
               </label>
               <select
                 value={goalType}
                 onChange={(e) => setGoalType(e.target.value as GoalType)}
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
+                className="w-full rounded-xl border border-paper-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs text-charcoal-primary dark:text-white"
               >
-                <option value="exam_score">Exam Score Target</option>
+                <option value="exam_score">Exam Score</option>
                 <option value="subject_mastery">Subject Mastery</option>
-                <option value="study_hours">Study Hours Target</option>
-                <option value="habit">Habit Consistency</option>
-                <option value="project">Project Milestone</option>
+                <option value="study_hours">Study Hours</option>
+                <option value="habit">Habit / Routine</option>
+                <option value="project">Project Deliverable</option>
               </select>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
-                Subject
-              </label>
-              <select
-                value={goalSubjectId}
-                onChange={(e) => setGoalSubjectId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
-              >
-                <option value="">General / All Subjects</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code || s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Target Date"
               type="date"
+              required
               value={targetDate}
               onChange={(e) => setTargetDate(e.target.value)}
-              required
-            />
-            <Input
-              label="Initial Progress %"
-              type="number"
-              min={0}
-              max={100}
-              value={progressPct}
-              onChange={(e) => setProgressPct(Number(e.target.value))}
             />
           </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
-              Description / Notes
-            </label>
-            <textarea
-              rows={2}
-              value={goalDesc}
-              onChange={(e) => setGoalDesc(e.target.value)}
-              placeholder="Why this goal matters and target criteria..."
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-900 dark:text-white"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setIsGoalModalOpen(false)}>
+          <Input
+            label="Current Progress % (0 - 100)"
+            type="number"
+            min={0}
+            max={100}
+            value={progressPct}
+            onChange={(e) => setProgressPct(Number(e.target.value))}
+          />
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border">
+            <Button variant="ghost" type="button" onClick={() => setIsGoalModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Create Goal</Button>
+            <Button type="submit">Set Goal</Button>
           </div>
         </form>
       </Modal>
 
-      {/* Create Plan Modal */}
+      {/* Plan Modal */}
       <Modal
         isOpen={isPlanModalOpen}
         onClose={() => setIsPlanModalOpen(false)}
-        title="Create Study Plan / Sprint"
-        description="Outline a structured weekly or examination revision plan."
+        title="Create Study Plan"
+        description="Plan out structured revision with milestones."
       >
-        <form onSubmit={handleCreatePlan} className="space-y-4 pt-2">
+        <form onSubmit={handleCreatePlan} className="space-y-4">
           <Input
             label="Plan Title"
-            placeholder="e.g. Two-Week Midterm Revision Sprint"
+            required
+            placeholder="e.g. Midterm Week Intensive Revision"
             value={planTitle}
             onChange={(e) => setPlanTitle(e.target.value)}
-            required
           />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
+          <Input
+            label="Description"
+            placeholder="Focus areas, textbook chapters..."
+            value={planDesc}
+            onChange={(e) => setPlanDesc(e.target.value)}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-charcoal-primary dark:text-slate-300 tracking-wide uppercase mb-1.5">
                 Plan Type
               </label>
               <select
                 value={planType}
                 onChange={(e) => setPlanType(e.target.value as PlanType)}
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
+                className="w-full rounded-xl border border-paper-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs text-charcoal-primary dark:text-white"
               >
-                <option value="weekly">Weekly Sprint</option>
-                <option value="exam_prep">Exam Prep Blueprint</option>
-                <option value="subject_mastery">Subject Deep Dive</option>
-                <option value="daily">Daily Schedule Plan</option>
+                <option value="weekly">Weekly Plan</option>
+                <option value="daily">Daily Intensive</option>
+                <option value="exam_prep">Exam Preparation</option>
+                <option value="subject_mastery">Subject Mastery</option>
               </select>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
-                Subject
+            <div>
+              <label className="block text-xs font-semibold text-charcoal-primary dark:text-slate-300 tracking-wide uppercase mb-1.5">
+                Subject Link
               </label>
               <select
                 value={planSubjectId}
                 onChange={(e) => setPlanSubjectId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
+                className="w-full rounded-xl border border-paper-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs text-charcoal-primary dark:text-white"
               >
-                <option value="">General</option>
+                <option value="">No Subject Linked</option>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.code || s.name}
+                    {s.name}
                   </option>
                 ))}
               </select>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input
               label="Start Date"
               type="date"
-              value={planStartDate}
-              onChange={(e) => setPlanStartDate(e.target.value)}
               required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
             />
             <Input
               label="End Date"
               type="date"
-              value={planEndDate}
-              onChange={(e) => setPlanEndDate(e.target.value)}
               required
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
-              Checklist / Markdown Content
-            </label>
-            <textarea
-              rows={4}
-              value={planContent}
-              onChange={(e) => setPlanContent(e.target.value)}
-              placeholder="- [ ] Review chapters 1-4&#10;- [ ] Solve practice problems&#10;- [ ] Take timed mock test"
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm font-mono text-slate-900 dark:text-white"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setIsPlanModalOpen(false)}>
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border">
+            <Button variant="ghost" type="button" onClick={() => setIsPlanModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit">Create Plan</Button>
@@ -539,4 +600,3 @@ export const GoalsPlansPage: React.FC = () => {
     </div>
   );
 };
-

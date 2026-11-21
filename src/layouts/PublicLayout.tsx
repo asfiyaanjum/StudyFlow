@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { GraduationCap, Sun, Moon, ArrowRight, Menu, X } from 'lucide-react';
+import { GraduationCap, Sun, Moon, ArrowRight, Menu, X, Sparkles, Shield, Heart } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
@@ -15,36 +15,37 @@ export const PublicLayout: React.FC = () => {
     { label: 'Features', href: '/features' },
     { label: 'About', href: '/about' },
     { label: 'Contact', href: '/contact' },
+    { label: 'Design System', href: '/design-system' },
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface-light dark:bg-surface-dark text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col bg-paper-canvas dark:bg-surface-dark text-charcoal-primary dark:text-slate-100 transition-colors">
       {/* Navigation Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full border-b border-paper-border dark:border-slate-800 bg-paper-canvas/90 dark:bg-surface-dark/90 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform">
-              <GraduationCap className="w-6 h-6" />
+            <div className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-subtle group-hover:scale-105 transition-transform">
+              <GraduationCap className="w-5 h-5" />
             </div>
-            <div>
-              <span className="font-bold text-xl tracking-tight text-slate-900 dark:text-white">
-                Study<span className="text-brand-600 dark:text-brand-400">Flow</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-editorial text-2xl font-semibold tracking-tight text-charcoal-primary dark:text-white">
+                StudyFlow
               </span>
-              <span className="hidden sm:inline-block ml-2 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800">
+              <span className="hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
                 Academic OS
               </span>
             </div>
           </Link>
 
           {/* Desktop Nav Items */}
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600 dark:text-slate-300">
+          <nav className="hidden md:flex items-center gap-8 text-xs font-semibold uppercase tracking-wider text-charcoal-muted dark:text-slate-400">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 to={link.href}
-                className={`hover:text-brand-600 dark:hover:text-brand-400 transition-colors ${
-                  location.pathname === link.href ? 'text-brand-600 dark:text-brand-400 font-semibold' : ''
+                className={`hover:text-charcoal-primary dark:hover:text-white transition-colors ${
+                  location.pathname === link.href ? 'text-brand-600 dark:text-brand-400 font-bold' : ''
                 }`}
               >
                 {link.label}
@@ -56,27 +57,27 @@ export const PublicLayout: React.FC = () => {
           <div className="hidden md:flex items-center gap-3">
             <button
               onClick={toggleTheme}
-              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 text-charcoal-muted hover:text-charcoal-primary dark:text-slate-400 dark:hover:text-slate-200 rounded-xl hover:bg-paper-100 dark:hover:bg-slate-800/60 border border-transparent hover:border-paper-border dark:hover:border-slate-700 transition-colors"
               aria-label="Toggle theme"
             >
-              {resolvedTheme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+              {resolvedTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-charcoal-primary" />}
             </button>
 
             {isAuthenticated ? (
               <Link to="/app">
-                <Button size="sm" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                <Button size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
                   Go to Workspace
                 </Button>
               </Link>
             ) : (
               <>
                 <Link to="/login">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" className="text-charcoal-primary dark:text-slate-200">
                     Log in
                   </Button>
                 </Link>
                 <Link to="/register">
-                  <Button size="sm" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                  <Button size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
                     Get Started Free
                   </Button>
                 </Link>
@@ -88,36 +89,38 @@ export const PublicLayout: React.FC = () => {
           <div className="flex md:hidden items-center gap-2">
             <button
               onClick={toggleTheme}
-              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-xl"
+              className="p-2 text-charcoal-muted dark:text-slate-400 rounded-xl"
+              aria-label="Toggle theme"
             >
-              {resolvedTheme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+              {resolvedTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-600 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-2 text-charcoal-primary dark:text-slate-200 rounded-xl hover:bg-paper-100 dark:hover:bg-slate-800"
+              aria-label="Open mobile menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
 
         {/* Mobile Dropdown Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-4 space-y-3">
+          <div className="md:hidden border-b border-paper-border dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-4 space-y-3">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 to={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className="block py-2 text-base font-medium text-slate-700 dark:text-slate-200 hover:text-brand-600"
+                className="block py-2 text-sm font-medium text-charcoal-primary dark:text-slate-200 hover:text-brand-600"
               >
                 {link.label}
               </Link>
             ))}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+            <div className="pt-3 border-t border-paper-border dark:border-slate-800 flex flex-col gap-2">
               {isAuthenticated ? (
                 <Link to="/app" onClick={() => setMobileMenuOpen(false)}>
-                  <Button className="w-full">Open App Dashboard</Button>
+                  <Button className="w-full">Open Student Workspace</Button>
                 </Link>
               ) : (
                 <>
@@ -136,71 +139,76 @@ export const PublicLayout: React.FC = () => {
         )}
       </header>
 
-      {/* Main Public Content */}
+      {/* Main Content */}
       <main className="flex-1">
         <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 py-12">
+      {/* Aesthetic Footer */}
+      <footer className="border-t border-paper-border dark:border-slate-800 bg-white dark:bg-slate-900/60 py-12 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="space-y-4 md:col-span-1">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white">
-                  <GraduationCap className="w-5 h-5" />
+                <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center text-white">
+                  <GraduationCap className="w-4 h-4" />
                 </div>
-                <span className="font-bold text-lg text-slate-900 dark:text-white">StudyFlow</span>
+                <span className="font-editorial text-xl font-medium text-charcoal-primary dark:text-white">
+                  StudyFlow
+                </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                The intelligent academic operating system. Plan smarter, study consistently, and recover when you fall behind.
+              <p className="text-xs text-charcoal-muted dark:text-slate-400 leading-relaxed max-w-sm">
+                The personal academic operating system for university students. Plan realistically, execute consistently, and recover with intelligence when life happens.
               </p>
+              <div className="flex items-center gap-2 text-xs text-charcoal-light dark:text-slate-500">
+                <Shield size={12} className="text-emerald-500" />
+                <span>Supabase PostgreSQL & Row Level Security</span>
+              </div>
             </div>
 
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white mb-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-charcoal-primary dark:text-white mb-3">
                 Product
               </h4>
-              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                <li><Link to="/features" className="hover:text-brand-600">Features</Link></li>
-                <li><Link to="/features#recovery" className="hover:text-brand-600">Recovery Engine</Link></li>
-                <li><Link to="/features#timetable" className="hover:text-brand-600">Smart Timetable</Link></li>
-                <li><Link to="/features#syllabus" className="hover:text-brand-600">Syllabus Tracker</Link></li>
+              <ul className="space-y-2 text-xs text-charcoal-muted dark:text-slate-400">
+                <li><Link to="/features" className="hover:text-brand-600 dark:hover:text-white transition-colors">Features & Philosophy</Link></li>
+                <li><Link to="/features#recovery" className="hover:text-brand-600 dark:hover:text-white transition-colors">Recovery Engine</Link></li>
+                <li><Link to="/design-system" className="hover:text-brand-600 dark:hover:text-white transition-colors">Design System Showcase</Link></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white mb-3">
-                Company
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-charcoal-primary dark:text-white mb-3">
+                Platform
               </h4>
-              <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                <li><Link to="/about" className="hover:text-brand-600">About Us</Link></li>
-                <li><Link to="/contact" className="hover:text-brand-600">Contact & Support</Link></li>
-                <li><Link to="/privacy" className="hover:text-brand-600">Privacy Policy</Link></li>
-                <li><Link to="/terms" className="hover:text-brand-600">Terms of Service</Link></li>
+              <ul className="space-y-2 text-xs text-charcoal-muted dark:text-slate-400">
+                <li><Link to="/about" className="hover:text-brand-600 dark:hover:text-white transition-colors">About Our Mission</Link></li>
+                <li><Link to="/contact" className="hover:text-brand-600 dark:hover:text-white transition-colors">Contact Support</Link></li>
+                <li><Link to="/privacy" className="hover:text-brand-600 dark:hover:text-white transition-colors">Privacy Policy</Link></li>
+                <li><Link to="/terms" className="hover:text-brand-600 dark:hover:text-white transition-colors">Terms of Service</Link></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-white mb-3">
-                Security & Reliability
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-charcoal-primary dark:text-white mb-3">
+                Start Studying
               </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Engineered with Supabase, PostgreSQL Row-Level Security, end-to-end data isolation, and modern high-availability infrastructure.
+              <p className="text-xs text-charcoal-muted dark:text-slate-400 leading-relaxed mb-3">
+                Ready to transform your semester? Create your free account in seconds.
               </p>
-              <div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                All Systems Operational
-              </div>
+              <Link to="/register">
+                <Button size="sm" className="w-full">
+                  Create Account
+                </Button>
+              </Link>
             </div>
           </div>
 
-          <div className="mt-12 pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
-            <p>© {new Date().getFullYear()} StudyFlow SaaS Inc. All rights reserved.</p>
-            <div className="flex gap-6">
-              <Link to="/privacy" className="hover:text-brand-600">Privacy</Link>
-              <Link to="/terms" className="hover:text-brand-600">Terms</Link>
-              <Link to="/contact" className="hover:text-brand-600">Support</Link>
+          <div className="mt-10 pt-6 border-t border-paper-border dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-charcoal-light dark:text-slate-500">
+            <p>&copy; {new Date().getFullYear()} StudyFlow. Designed for deliberate student productivity.</p>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span>Built with care for university students</span>
+              <Heart size={12} className="text-rose-500 fill-rose-500" />
             </div>
           </div>
         </div>
@@ -208,4 +216,3 @@ export const PublicLayout: React.FC = () => {
     </div>
   );
 };
-

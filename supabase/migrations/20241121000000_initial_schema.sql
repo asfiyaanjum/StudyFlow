@@ -3,6 +3,7 @@
 -- PHASE 2: COMPLETE SUPABASE INTEGRATION FOR NEW EMPTY SUPABASE PROJECT
 -- ==============================================================================
 
+
 -- 1. Enable required PostgreSQL extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";

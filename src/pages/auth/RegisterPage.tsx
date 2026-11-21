@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { GraduationCap, Lock, Mail, User, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { GraduationCap, Lock, Mail, User, Eye, EyeOff, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Button } from '../../components/ui/Button';
@@ -52,16 +52,17 @@ export const RegisterPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const result = await signUp(username, email, password, fullName);
+      const result = await signUp(username, email, password, fullName || undefined);
+
       if (result.success) {
         if (result.emailConfirmationRequired) {
           navigate(`/verify-email?email=${encodeURIComponent(email)}`);
         } else {
-          success('Account Created!', 'Welcome to StudyFlow! Your workspace is ready.');
+          success('Account Created', 'Welcome to StudyFlow! You are now logged in.');
           navigate('/app');
         }
       } else {
-        setErrorMessage(result.error || 'Failed to create account.');
+        setErrorMessage(result.error || 'Failed to register account.');
         toastError('Registration Failed', result.error);
       }
     } catch (err: any) {
@@ -72,109 +73,123 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white dark:bg-slate-900 p-8 sm:p-10 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl">
+    <div className="min-h-[85vh] flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 bg-white dark:bg-slate-900 p-7 sm:p-10 rounded-3xl border border-paper-border dark:border-slate-800 shadow-card">
+        {/* Brand & Heading */}
         <div className="text-center space-y-2">
-          <Link to="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-md">
+          <Link to="/" className="inline-flex items-center gap-2 group">
+            <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-subtle group-hover:scale-105 transition-transform">
               <GraduationCap className="w-6 h-6" />
             </div>
           </Link>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">
-            Create StudyFlow Account
+          <h2 className="font-editorial text-3xl font-medium tracking-tight text-charcoal-primary dark:text-white">
+            Create Your StudyFlow Account
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Set up your personal academic operating system
+          <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400">
+            Start organizing your semester with confidence and calm.
           </p>
         </div>
 
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-xs text-rose-600 dark:text-rose-400 font-medium text-center">
+          <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-xs text-rose-700 dark:text-rose-300 font-medium">
             {errorMessage}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           <Input
-            label="Full Name"
-            placeholder="Alex Chen"
+            label="Username"
+            id="username"
+            required
+            placeholder="e.g. alex_chen (letters, numbers, _)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase().trim())}
+            leftIcon={<User className="w-4 h-4" />}
+            autoComplete="username"
+          />
+
+          <Input
+            label="Full Name (Optional)"
+            id="fullName"
+            placeholder="e.g. Alex Chen"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             leftIcon={<User className="w-4 h-4" />}
-            required
+            autoComplete="name"
           />
 
           <Input
-            label="Username"
-            placeholder="alex_chen"
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
-            leftIcon={<span className="text-xs font-bold text-slate-400">@</span>}
-            helperText="Letters, numbers, and underscores only"
-            required
-          />
-
-          <Input
-            label="Real Email Address"
+            label="Email Address"
+            id="email"
             type="email"
-            placeholder="alex.chen@university.edu"
+            required
+            placeholder="alex@university.edu"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             leftIcon={<Mail className="w-4 h-4" />}
-            required
             autoComplete="email"
           />
 
-          <Input
-            label="Password"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="At least 6 characters"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            leftIcon={<Lock className="w-4 h-4" />}
-            rightIcon={
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="hover:text-slate-600"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            }
-            required
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <Input
+              label="Password (min 6 characters)"
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              leftIcon={<Lock className="w-4 h-4" />}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3.5 top-8 flex items-center text-charcoal-muted hover:text-charcoal-primary"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
 
           <Input
             label="Confirm Password"
+            id="confirmPassword"
             type={showPassword ? 'text' : 'password'}
-            placeholder="Confirm your password"
+            required
+            placeholder="••••••••"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             leftIcon={<Lock className="w-4 h-4" />}
-            required
             autoComplete="new-password"
           />
 
-          <Button
-            type="submit"
-            size="md"
-            className="w-full mt-2"
-            isLoading={loading}
-            rightIcon={<ArrowRight className="w-4 h-4" />}
-          >
-            Create Free Account
-          </Button>
+          <div className="pt-2">
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              isLoading={loading}
+              rightIcon={<ArrowRight className="w-4 h-4" />}
+            >
+              Get Started Free
+            </Button>
+          </div>
         </form>
 
-        <div className="text-center pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
-          Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-brand-600 hover:text-brand-500 dark:text-brand-400">
-            Sign in
-          </Link>
+        <div className="pt-4 border-t border-paper-border dark:border-slate-800 text-center space-y-3">
+          <p className="text-xs text-charcoal-muted dark:text-slate-400">
+            Already have an account?{' '}
+            <Link to="/login" className="text-brand-600 dark:text-brand-400 font-semibold hover:underline">
+              Sign in here
+            </Link>
+          </p>
+          <div className="flex items-center justify-center gap-1.5 text-[11px] text-charcoal-light dark:text-slate-500">
+            <ShieldCheck size={13} className="text-emerald-500" />
+            <span>Isolated Supabase PostgreSQL Row-Level Security</span>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-

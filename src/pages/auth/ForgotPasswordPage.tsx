@@ -32,69 +32,66 @@ export const ForgotPasswordPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white dark:bg-slate-900 p-8 sm:p-10 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl">
+    <div className="min-h-[80vh] flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 bg-white dark:bg-slate-900 p-7 sm:p-10 rounded-3xl border border-paper-border dark:border-slate-800 shadow-card">
         <div className="text-center space-y-2">
-          <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white mx-auto shadow-md">
+          <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white mx-auto shadow-subtle">
             <GraduationCap className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">
+          <h2 className="font-editorial text-3xl font-medium tracking-tight text-charcoal-primary dark:text-white">
             Reset Password
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Enter your account email to receive a password recovery link
+          <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400">
+            Enter your email and we'll send a secure link to reset your password.
           </p>
         </div>
 
         {sent ? (
-          <div className="text-center space-y-4 py-4">
-            <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-              Recovery Link Dispatched
+          <div className="text-center py-6 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle2 size={24} />
+            </div>
+            <p className="text-xs sm:text-sm text-charcoal-primary dark:text-slate-200">
+              Recovery instructions have been sent to <strong>{email}</strong>. Please check your inbox and spam folder.
             </p>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              We have sent a secure password reset link to <strong>{email}</strong>. Please check your inbox and spam folder.
-            </p>
-            <Link to="/login" className="block pt-2">
-              <Button variant="outline" size="sm" className="w-full">
-                Back to Login
-              </Button>
+            <Link to="/login" className="inline-block text-xs font-semibold text-brand-600 hover:underline pt-2">
+              Back to Login
             </Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Account Email"
+              id="email"
               type="email"
-              placeholder="alex.chen@university.edu"
+              required
+              placeholder="alex@university.edu"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               leftIcon={<Mail className="w-4 h-4" />}
-              required
             />
-
             <Button
               type="submit"
-              size="md"
               className="w-full"
+              size="lg"
               isLoading={loading}
               rightIcon={<Send className="w-4 h-4" />}
             >
-              Send Recovery Link
+              Send Password Reset Link
             </Button>
-
-            <div className="text-center pt-2">
-              <Link
-                to="/login"
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to Login
-              </Link>
-            </div>
           </form>
         )}
+
+        <div className="pt-4 border-t border-paper-border dark:border-slate-800 text-center">
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-1.5 text-xs text-charcoal-muted hover:text-charcoal-primary dark:text-slate-400"
+          >
+            <ArrowLeft size={13} />
+            <span>Return to sign in</span>
+          </Link>
+        </div>
       </div>
     </div>
   );
 };
-

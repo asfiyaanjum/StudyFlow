@@ -2,40 +2,43 @@ import React from 'react';
 
 export const PrivacyPage: React.FC = () => {
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-8">
-      <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white">Privacy Policy</h1>
-      <p className="text-xs text-slate-500">Effective Date: November 2026</p>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-8">
+      <div className="border-b border-paper-border dark:border-slate-800 pb-6">
+        <h1 className="font-editorial text-4xl font-medium text-charcoal-primary dark:text-white">
+          Privacy Policy
+        </h1>
+        <p className="text-xs text-charcoal-muted dark:text-slate-400 mt-1">Effective Date: November 2026</p>
+      </div>
 
-      <div className="prose dark:prose-invert max-w-none text-sm space-y-6 text-slate-700 dark:text-slate-300 leading-relaxed">
+      <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 shadow-subtle space-y-6 text-sm text-charcoal-muted dark:text-slate-300 leading-relaxed">
         <section className="space-y-2">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">1. Information We Collect</h2>
+          <h2 className="text-lg font-bold text-charcoal-primary dark:text-white">1. Information We Collect</h2>
           <p>
-            StudyFlow collects student account credentials (username, verified email address), academic timetables, task descriptions, syllabus topics, and focus session durations to provide our academic productivity services.
+            StudyFlow collects student account credentials (username, verified email address), academic timetables, task descriptions, syllabus topics, and focus session durations strictly to deliver student productivity services.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">2. Security & Row-Level Security (RLS)</h2>
+          <h2 className="text-lg font-bold text-charcoal-primary dark:text-white">2. Supabase Row-Level Security (RLS)</h2>
           <p>
-            All user data is stored within Supabase PostgreSQL instances with Row-Level Security (RLS) enabled. Each query is strictly isolated by authenticated user IDs. No student can read or modify another student's tasks, notes, or schedules.
+            All user data is stored within PostgreSQL with Row-Level Security (RLS) policies permanently enforced. Every database query is strictly filtered by the authenticated user's ID. No student can access, query, or modify another student's timetable or records.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">3. Data Sharing & Third Parties</h2>
+          <h2 className="text-lg font-bold text-charcoal-primary dark:text-white">3. Third-Party Sharing</h2>
           <p>
-            We do not sell, rent, or monetize your academic records, habits, or personal contact details with third-party advertisers or educational data brokers.
+            We do not sell student data, behavioral study logs, or course documents to advertising networks or third parties.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">4. Data Deletion</h2>
+          <h2 className="text-lg font-bold text-charcoal-primary dark:text-white">4. Account Deletion</h2>
           <p>
-            You may request complete account and data deletion at any time from your Settings page or by contacting support@studyflow.app.
+            Students have full control over their academic records and may delete their accounts and all associated data at any time via Settings.
           </p>
         </section>
       </div>
     </div>
   );
 };
-

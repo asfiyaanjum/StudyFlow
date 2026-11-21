@@ -27,11 +27,14 @@ Deno.serve(async (req: Request) => {
     const cleanUsername = String(username).toLowerCase().trim();
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    // Note: SUPABASE_ANON_KEY is not always present in hosted Supabase Deno env.
+    // Fall back to the apikey header passed by the frontend client or service key.
+    const authKey = Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || supabaseServiceKey;
 
-    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
       return new Response(
-        JSON.stringify({ error: "Server configuration missing. Contact administrator." }),
+        JSON.stringify({ error: "Server configuration missing: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -56,13 +59,16 @@ Deno.serve(async (req: Request) => {
 
     // 2. Authenticate the user with their resolved email using Supabase Auth (GoTrue)
     // Supabase Auth handles rate limiting, password validation, lockout policies, and email confirmation status.
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+    const supabaseClient = createClient(supabaseUrl, authKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
     const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
       email: profile.email,
       password: String(password),
     });
 
     if (authError) {
+      console.warn("Auth error in sign-in-with-username:", authError.message);
       return new Response(
         JSON.stringify({ error: authError.message }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }

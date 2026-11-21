@@ -12,6 +12,8 @@ import {
   BookOpen,
   Volume2,
   VolumeX,
+  Clock,
+  History,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Task, Subject, FocusSession, TimerMode } from '../../types';
@@ -50,13 +52,13 @@ export const FocusTimerPage: React.FC = () => {
           api.focus.getFocusSessions(),
         ]);
         setSubjects(subs);
-        setTasks(ts);
+        setTasks(ts.filter((t) => !t.is_completed));
         setRecentSessions(sess);
 
         if (linkedTaskId) {
-          const matched = ts.find((t) => t.id === linkedTaskId);
-          if (matched && matched.subject_id) {
-            setSelectedSubjectId(matched.subject_id);
+          const t = ts.find((item) => item.id === linkedTaskId);
+          if (t && t.subject_id) {
+            setSelectedSubjectId(t.subject_id);
           }
         }
       } catch (e) {
@@ -66,36 +68,22 @@ export const FocusTimerPage: React.FC = () => {
     loadMetadata();
   }, [linkedTaskId]);
 
-  const setTimerMode = (newMode: TimerMode, durationMinutes: number) => {
+  // Mode durations in minutes
+  const MODE_DURATIONS: Record<TimerMode, number> = {
+    pomodoro: 25,
+    short_break: 5,
+    long_break: 15,
+    custom: 45,
+  };
+
+  const handleModeChange = (newMode: TimerMode) => {
     setIsRunning(false);
     if (timerRef.current) clearInterval(timerRef.current);
     setMode(newMode);
-    const secs = durationMinutes * 60;
-    setTotalSessionSeconds(secs);
+    const secs = MODE_DURATIONS[newMode] * 60;
     setSecondsRemaining(secs);
+    setTotalSessionSeconds(secs);
   };
-
-  // Timer Tick Handling with exact delta
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setSecondsRemaining((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            handleCompleteSession();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRunning, totalSessionSeconds, mode, selectedSubjectId, selectedTaskId]);
 
   const playBeep = () => {
     if (!soundEnabled) return;
@@ -103,281 +91,258 @@ export const FocusTimerPage: React.FC = () => {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      osc.frequency.value = 587.33; // D5 note
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.8);
     } catch {
-      // quiet fallback
+      // audio context silent fail
     }
   };
 
-  const handleCompleteSession = async () => {
+  const handleSessionComplete = async () => {
     setIsRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
     playBeep();
 
-    // Trigger celebratory confetti
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // quiet fallback
-    }
+    confetti({
+      particleCount: 60,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
 
-    const durationMins = Math.round(totalSessionSeconds / 60);
+    const elapsedMins = Math.round(totalSessionSeconds / 60);
 
     try {
-      const newSession = await api.focus.logSession({
+      const session = await api.focus.logSession({
         user_id: 'user',
         subject_id: selectedSubjectId || null,
         task_id: selectedTaskId || null,
-        duration_minutes: durationMins,
-        actual_minutes: durationMins,
+        duration_minutes: elapsedMins,
+        actual_minutes: elapsedMins,
         mode,
-        notes: `Completed ${mode} session.`,
         completed_at: new Date().toISOString(),
       });
-
-      setRecentSessions((prev) => [newSession, ...prev]);
-      success(
-        'Focus Session Completed! 🎉',
-        `Logged ${durationMins} minutes of study towards your daily target.`
-      );
-    } catch (e: any) {
+      setRecentSessions((prev) => [session, ...prev]);
+      success('Focus Session Finished', `Logged ${elapsedMins} minutes of study time!`);
+    } catch (e) {
       console.error(e);
     }
   };
 
-  const handleReset = () => {
+  useEffect(() => {
+    if (isRunning) {
+      timerRef.current = setInterval(() => {
+        setSecondsRemaining((prev) => {
+          if (prev <= 1) {
+            handleSessionComplete();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRunning, totalSessionSeconds, mode, selectedSubjectId, selectedTaskId]);
+
+  const toggleTimer = () => setIsRunning(!isRunning);
+
+  const resetTimer = () => {
     setIsRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    setSecondsRemaining(totalSessionSeconds);
+    const secs = MODE_DURATIONS[mode] * 60;
+    setSecondsRemaining(secs);
   };
 
-  // Format MM:SS
-  const minutes = Math.floor(secondsRemaining / 60);
-  const seconds = secondsRemaining % 60;
-  const timeDisplay = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const formatDigits = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
-  const progressPercent =
-    totalSessionSeconds > 0
-      ? Math.round(((totalSessionSeconds - secondsRemaining) / totalSessionSeconds) * 100)
-      : 0;
+  // Progress percentage (0 to 100)
+  const progressPct = Math.round(((totalSessionSeconds - secondsRemaining) / totalSessionSeconds) * 100);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
-      {/* Title */}
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Synchronized Focus Room
+      {/* Header */}
+      <div className="text-center space-y-2 border-b border-paper-border dark:border-slate-800 pb-5">
+        <h1 className="font-editorial text-4xl font-medium text-charcoal-primary dark:text-white tracking-tight">
+          Distraction-Free Focus
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-          Eliminate distractions. Log actual minutes directly to your course tasks and syllabus.
+        <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400">
+          Immerse yourself in deliberate study intervals linked to your courses.
         </p>
       </div>
 
-      {/* Main Focus Card */}
-      <Card className="p-8 sm:p-12 text-center space-y-8 max-w-2xl mx-auto shadow-2xl relative overflow-hidden">
-        {/* Mode Selector */}
-        <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 gap-1 text-xs font-semibold">
+      {/* Main Focus Dial Card */}
+      <Card className="p-8 sm:p-12 rounded-3xl bg-white dark:bg-slate-900 border-paper-border dark:border-slate-800 shadow-card flex flex-col items-center justify-center text-center space-y-8">
+        {/* Mode Selector Tabs */}
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-paper-canvas dark:bg-slate-800 border border-paper-border dark:border-slate-700 text-xs font-medium">
           <button
-            onClick={() => setTimerMode('pomodoro', 25)}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            onClick={() => handleModeChange('pomodoro')}
+            className={`px-4 py-1.5 rounded-xl transition-all ${
               mode === 'pomodoro'
-                ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-brand-600 text-white font-semibold shadow-xs'
+                : 'text-charcoal-muted hover:text-charcoal-primary'
             }`}
           >
             Pomodoro (25m)
           </button>
           <button
-            onClick={() => setTimerMode('short_break', 5)}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            onClick={() => handleModeChange('short_break')}
+            className={`px-4 py-1.5 rounded-xl transition-all ${
               mode === 'short_break'
-                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                : 'text-charcoal-muted hover:text-charcoal-primary'
             }`}
           >
             Short Break (5m)
           </button>
           <button
-            onClick={() => setTimerMode('long_break', 15)}
-            className={`px-4 py-2 rounded-xl transition-all ${
+            onClick={() => handleModeChange('long_break')}
+            className={`px-4 py-1.5 rounded-xl transition-all ${
               mode === 'long_break'
-                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                ? 'bg-purple-600 text-white font-semibold shadow-xs'
+                : 'text-charcoal-muted hover:text-charcoal-primary'
             }`}
           >
             Long Break (15m)
           </button>
-          <button
-            onClick={() => setTimerMode('custom', 50)}
-            className={`px-4 py-2 rounded-xl transition-all ${
-              mode === 'custom'
-                ? 'bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-            }`}
-          >
-            Deep Focus (50m)
-          </button>
         </div>
 
-        {/* Big Circular Display */}
-        <div className="relative w-64 h-64 sm:w-72 sm:h-72 mx-auto flex items-center justify-center">
-          <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-            {/* Background ring */}
-            <circle
-              cx="50"
-              cy="50"
-              r="44"
-              className="stroke-slate-100 dark:stroke-slate-800"
-              strokeWidth="6"
-              fill="transparent"
+        {/* Big Serene Timer Display */}
+        <div className="space-y-3">
+          <div className="font-editorial text-7xl sm:text-8xl lg:text-9xl font-medium text-charcoal-primary dark:text-white tabular-nums tracking-tighter select-none">
+            {formatDigits(secondsRemaining)}
+          </div>
+          <div className="w-48 sm:w-64 mx-auto h-2 rounded-full bg-paper-border dark:bg-slate-700 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-1000 rounded-full ${
+                mode === 'pomodoro' ? 'bg-brand-600' : 'bg-emerald-500'
+              }`}
+              style={{ width: `${progressPct}%` }}
             />
-            {/* Progress ring */}
-            <circle
-              cx="50"
-              cy="50"
-              r="44"
-              className="stroke-brand-600 transition-all duration-300"
-              strokeWidth="6"
-              strokeDasharray={276.46}
-              strokeDashoffset={276.46 - (276.46 * progressPercent) / 100}
-              strokeLinecap="round"
-              fill="transparent"
-            />
-          </svg>
-
-          <div className="absolute inset-0 flex flex-col items-center justify-center space-y-1">
-            <span className="text-5xl sm:text-6xl font-black text-slate-900 dark:text-white font-mono tracking-tight">
-              {timeDisplay}
-            </span>
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400">
-              {isRunning ? 'Session Active' : 'Ready'}
-            </span>
           </div>
         </div>
 
-        {/* Association Dropdowns */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-md mx-auto">
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-500 uppercase">Subject</label>
+        {/* Controls */}
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={resetTimer}
+            className="p-3 rounded-2xl border border-paper-border dark:border-slate-700 hover:bg-paper-canvas text-charcoal-muted hover:text-charcoal-primary transition-colors"
+            title="Reset Timer"
+          >
+            <RotateCcw size={18} />
+          </button>
+
+          <Button
+            size="lg"
+            onClick={toggleTimer}
+            className="px-8 py-3.5 text-base shadow-subtle min-w-[140px]"
+            leftIcon={isRunning ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+          >
+            {isRunning ? 'Pause' : 'Start Focus'}
+          </Button>
+
+          <button
+            type="button"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            className="p-3 rounded-2xl border border-paper-border dark:border-slate-700 hover:bg-paper-canvas text-charcoal-muted hover:text-charcoal-primary transition-colors"
+            title={soundEnabled ? 'Mute Alert' : 'Enable Alert'}
+          >
+            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+        </div>
+
+        {/* Context Linking: Subject & Task */}
+        <div className="w-full max-w-md pt-6 border-t border-paper-border dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+          <div>
+            <label className="block text-xs font-semibold text-charcoal-light dark:text-slate-400 uppercase tracking-wide mb-1">
+              Course Subject
+            </label>
             <select
               value={selectedSubjectId}
               onChange={(e) => setSelectedSubjectId(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-white"
+              className="w-full rounded-xl border border-paper-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-charcoal-primary dark:text-white"
             >
-              <option value="">General Study</option>
-              {subjects.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.code || sub.name}
+              <option value="">No Subject Linked</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-500 uppercase">Linked Task</label>
+          <div>
+            <label className="block text-xs font-semibold text-charcoal-light dark:text-slate-400 uppercase tracking-wide mb-1">
+              Active Task
+            </label>
             <select
               value={selectedTaskId}
               onChange={(e) => setSelectedTaskId(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2.5 text-xs text-slate-900 dark:text-white truncate"
+              className="w-full rounded-xl border border-paper-border dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-charcoal-primary dark:text-white truncate"
             >
-              <option value="">No Specific Task</option>
-              {tasks
-                .filter((t) => !t.is_completed)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
+              <option value="">No Task Linked</option>
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
             </select>
           </div>
         </div>
-
-        {/* Control Buttons */}
-        <div className="flex items-center justify-center gap-4 pt-2">
-          <Button
-            size="lg"
-            onClick={() => setIsRunning(!isRunning)}
-            className="px-8 shadow-lg shadow-brand-500/25"
-            leftIcon={isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-          >
-            {isRunning ? 'Pause' : 'Start Focus'}
-          </Button>
-
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={handleReset}
-            title="Reset Timer"
-          >
-            <RotateCcw className="w-5 h-5 text-slate-500" />
-          </Button>
-
-          <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800"
-            title={soundEnabled ? 'Mute Sound' : 'Enable Sound'}
-          >
-            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </button>
-        </div>
       </Card>
 
-      {/* Focus History Table */}
+      {/* Focus History */}
       <div className="space-y-4">
-        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <TimerIcon className="w-5 h-5 text-brand-600" />
-          Recent Focus Sessions ({recentSessions.length})
+        <h3 className="font-editorial text-2xl font-medium text-charcoal-primary dark:text-white flex items-center gap-2">
+          <History size={18} /> Recent Focus Sessions
         </h3>
 
-        <Card className="p-0 overflow-hidden">
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {recentSessions.slice(0, 6).map((session) => (
+        {recentSessions.length === 0 ? (
+          <p className="text-xs text-charcoal-muted dark:text-slate-400 italic p-4 text-center">
+            No completed focus sessions yet. Hit "Start Focus" to log your first session.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {recentSessions.slice(0, 6).map((sess) => (
               <div
-                key={session.id}
-                className="p-4 flex items-center justify-between text-xs hover:bg-slate-50/50 dark:hover:bg-slate-800/50"
+                key={sess.id}
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 text-xs shadow-xs"
               >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
-                      {session.mode}
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-brand-600 shrink-0" />
+                  <div>
+                    <span className="font-medium text-charcoal-primary dark:text-white block">
+                      {sess.subject?.name || 'General Study Session'}
                     </span>
-                    {session.subject && (
-                      <span
-                        className="px-2 py-0.5 rounded font-semibold text-white text-[10px]"
-                        style={{ backgroundColor: session.subject.color }}
-                      >
-                        {session.subject.code || session.subject.name}
-                      </span>
-                    )}
-                    {session.task && (
-                      <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-xs">
-                        {session.task.title}
-                      </span>
+                    {sess.task && (
+                      <span className="text-[11px] text-charcoal-muted">Task: {sess.task.title}</span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    {new Date(session.completed_at).toLocaleString()}
-                  </p>
                 </div>
-
-                <span className="font-extrabold text-sm text-brand-600 dark:text-brand-400">
-                  +{session.actual_minutes} mins
-                </span>
+                <div className="text-right">
+                  <span className="font-semibold text-brand-600 block">{sess.actual_minutes} mins</span>
+                  <span className="text-[10px] text-charcoal-light">
+                    {new Date(sess.completed_at).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
-        </Card>
+        )}
       </div>
     </div>
   );
 };
-

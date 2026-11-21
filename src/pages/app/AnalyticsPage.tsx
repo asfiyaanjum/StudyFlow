@@ -12,6 +12,7 @@ import {
 import { api } from '../../services/api';
 import { AcademicAnalyticsOverview } from '../../types';
 import { Card } from '../../components/ui/Card';
+import { ProgressBar } from '../../components/ui/ProgressBar';
 import { formatMinutesToHours } from '../../utils/dateUtils';
 
 export const AnalyticsPage: React.FC = () => {
@@ -36,7 +37,7 @@ export const AnalyticsPage: React.FC = () => {
   if (loading || !analytics) {
     return (
       <div className="py-20 text-center">
-        <p className="text-sm text-slate-500">Calculating academic analytics...</p>
+        <p className="text-xs text-charcoal-muted animate-pulse">Calculating semester academic analytics...</p>
       </div>
     );
   }
@@ -44,205 +45,139 @@ export const AnalyticsPage: React.FC = () => {
   // Find max daily focus for SVG scale (at least 240m = 4h)
   const maxDailyMinutes = Math.max(
     240,
-    ...analytics.daily_trends.map((t) => t.focus_minutes)
+    ...analytics.daily_trends.map((d) => Math.max(d.focus_minutes, d.target_minutes))
   );
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Academic Consistency & Analytics
+    <div className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="border-b border-paper-border dark:border-slate-800 pb-5">
+        <h1 className="font-editorial text-3xl font-medium text-charcoal-primary dark:text-white tracking-tight">
+          Academic Analytics & Consistency
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Evidence-based productivity metrics computed entirely from your real study logs and coursework.
+        <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400 mt-0.5">
+          Evaluate study momentum, task completion rates, and subject distributions.
         </p>
       </div>
 
-      {/* KPI Cards */}
+      {/* 4 Metric Highlights */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Study Time This Week</span>
-            <Clock className="w-4 h-4 text-brand-500" />
+        <Card className="p-5 border-paper-border dark:border-slate-800 space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light">Total Focus Today</span>
+          <div className="font-editorial text-2xl font-medium text-charcoal-primary dark:text-white">
+            {formatMinutesToHours(analytics.total_study_minutes_today)}
           </div>
-          <span className="text-3xl font-black text-slate-900 dark:text-white">
+          <p className="text-[11px] text-charcoal-muted">Target: ~4 hours daily</p>
+        </Card>
+
+        <Card className="p-5 border-paper-border dark:border-slate-800 space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light">This Week's Focus</span>
+          <div className="font-editorial text-2xl font-medium text-charcoal-primary dark:text-white">
             {formatMinutesToHours(analytics.total_study_minutes_this_week)}
-          </span>
-          <p className="text-[11px] text-slate-500">
-            {analytics.study_sessions_completed} focus sessions logged
-          </p>
+          </div>
+          <p className="text-[11px] text-charcoal-muted">{analytics.study_sessions_completed} sessions logged</p>
         </Card>
 
-        <Card className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Consistency Streak</span>
-            <TrendingUp className="w-4 h-4 text-amber-500" />
-          </div>
-          <span className="text-3xl font-black text-amber-600 dark:text-amber-400">
-            {analytics.consistency_streak_days} Days
-          </span>
-          <p className="text-[11px] text-slate-500">Consecutive days with focused study</p>
-        </Card>
-
-        <Card className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Task Completion Rate</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
+        <Card className="p-5 border-paper-border dark:border-slate-800 space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light">Task Completion Rate</span>
+          <div className="font-editorial text-2xl font-medium text-brand-600 dark:text-brand-400">
             {analytics.task_completion_rate}%
-          </span>
-          <p className="text-[11px] text-slate-500">
-            Across all scheduled academic assignments
-          </p>
+          </div>
+          <p className="text-[11px] text-charcoal-muted">Across all semester tasks</p>
         </Card>
 
-        <Card className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Syllabus Completion</span>
-            <BookOpen className="w-4 h-4 text-sky-500" />
+        <Card className="p-5 border-paper-border dark:border-slate-800 space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light">Consistency Streak</span>
+          <div className="font-editorial text-2xl font-medium text-emerald-600 dark:text-emerald-400">
+            {analytics.consistency_streak_days} Days
           </div>
-          <span className="text-3xl font-black text-sky-600 dark:text-sky-400">
-            {analytics.overall_syllabus_completion_rate}%
-          </span>
-          <p className="text-[11px] text-slate-500">
-            Total conceptual topics mastered across subjects
-          </p>
+          <p className="text-[11px] text-charcoal-muted">Consecutive active study days</p>
         </Card>
       </div>
 
-      {/* Daily Study Trends Chart */}
-      <Card className="p-6 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+      {/* Daily Study Trends Bar Chart */}
+      <Card className="p-6 rounded-2xl bg-white dark:bg-slate-900 border-paper-border dark:border-slate-800 shadow-subtle space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-paper-border dark:border-slate-800 pb-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <BarChart2 className="w-5 h-5 text-brand-600" />
-              Daily Study Distribution (Last 7 Days)
-            </h2>
-            <p className="text-xs text-slate-500">
-              Minutes studied per day compared against your 4h daily target.
-            </p>
+            <h3 className="font-editorial text-xl font-medium text-charcoal-primary dark:text-white">
+              Daily Study Trends (Past 7 Days)
+            </h3>
+            <p className="text-xs text-charcoal-muted mt-0.5">Focus minutes vs. daily target threshold.</p>
           </div>
-          <span className="text-xs text-slate-400">
-            Target: 240m (4h/day)
-          </span>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1.5 text-charcoal-muted">
+              <span className="w-3 h-3 rounded bg-brand-600" /> Focus Time
+            </span>
+            <span className="flex items-center gap-1.5 text-charcoal-muted">
+              <span className="w-3 h-3 rounded bg-paper-border dark:bg-slate-700" /> Daily Target
+            </span>
+          </div>
         </div>
 
-        {/* Visual Bar Chart */}
-        <div className="pt-4 pb-2">
-          <div className="grid grid-cols-7 gap-3 sm:gap-6 items-end h-48 sm:h-56">
-            {analytics.daily_trends.map((day) => {
-              const heightPct = Math.min(
-                100,
-                Math.round((day.focus_minutes / maxDailyMinutes) * 100)
-              );
-              const reachedTarget = day.focus_minutes >= day.target_minutes;
+        {/* SVG Bar Chart */}
+        <div className="h-60 flex items-end justify-between gap-2 sm:gap-4 pt-4 px-2">
+          {analytics.daily_trends.map((day, idx) => {
+            const barHeightPct = Math.min(100, Math.round((day.focus_minutes / maxDailyMinutes) * 100));
+            const targetHeightPct = Math.min(100, Math.round((day.target_minutes / maxDailyMinutes) * 100));
 
-              return (
-                <div key={day.date} className="flex flex-col items-center gap-2 h-full justify-end">
-                  <span className="text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300">
-                    {day.focus_minutes > 0 ? formatMinutesToHours(day.focus_minutes) : '0m'}
-                  </span>
-
-                  <div className="w-full bg-slate-100 dark:bg-slate-800/80 rounded-xl h-full flex items-end p-1">
-                    <div
-                      className={`w-full rounded-lg transition-all duration-500 ${
-                        reachedTarget
-                          ? 'bg-emerald-500 shadow-md shadow-emerald-500/20'
-                          : day.focus_minutes > 0
-                          ? 'bg-brand-600'
-                          : 'bg-transparent'
-                      }`}
-                      style={{ height: `${Math.max(4, heightPct)}%` }}
-                    />
-                  </div>
-
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {day.day_label}
-                  </span>
+            return (
+              <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                <span className="text-[10px] font-mono text-charcoal-light">
+                  {day.focus_minutes > 0 ? `${day.focus_minutes}m` : '0'}
+                </span>
+                <div className="w-full max-w-[48px] h-44 bg-paper-canvas dark:bg-slate-800 rounded-xl relative flex items-end overflow-hidden">
+                  {/* Target line mark */}
+                  <div
+                    className="absolute w-full border-t border-dashed border-charcoal-light/40"
+                    style={{ bottom: `${targetHeightPct}%` }}
+                  />
+                  {/* Active Bar */}
+                  <div
+                    className="w-full bg-brand-600 dark:bg-brand-500 rounded-xl transition-all duration-500"
+                    style={{ height: `${barHeightPct}%` }}
+                  />
                 </div>
-              );
-            })}
-          </div>
+                <span className="text-xs font-semibold text-charcoal-primary dark:text-slate-300">
+                  {day.day_label}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
-      {/* Subject Distribution & Weekly Review */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Subject-Wise Time Allocation */}
-        <Card className="p-6 space-y-4">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-indigo-600" />
-            Subject Study Time Allocation
-          </h2>
-          <p className="text-xs text-slate-500">
-            Identify which subjects are receiving sufficient focus vs courses that may be neglected.
-          </p>
+      {/* Subject Distribution */}
+      <Card className="p-6 rounded-2xl bg-white dark:bg-slate-900 border-paper-border dark:border-slate-800 shadow-subtle space-y-4">
+        <h3 className="font-editorial text-xl font-medium text-charcoal-primary dark:text-white">
+          Study Time Allocation by Subject
+        </h3>
 
-          <div className="space-y-4 pt-2">
+        {analytics.subject_distributions.length === 0 ? (
+          <p className="text-xs text-charcoal-muted italic py-4">No logged study sessions for enrolled subjects yet.</p>
+        ) : (
+          <div className="space-y-4">
             {analytics.subject_distributions.map((sub) => (
               <div key={sub.subject_id} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-900 dark:text-white truncate">
-                    {sub.subject_name}
-                  </span>
-                  <span className="font-extrabold text-slate-700 dark:text-slate-300">
+                <div className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: sub.color }} />
+                    <span className="font-semibold text-charcoal-primary dark:text-white">{sub.subject_name}</span>
+                  </div>
+                  <span className="text-charcoal-muted">
                     {formatMinutesToHours(sub.total_minutes)} ({sub.percentage}%)
                   </span>
                 </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                <div className="w-full h-2 rounded-full bg-paper-canvas dark:bg-slate-800 overflow-hidden">
                   <div
-                    className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${Math.max(5, sub.percentage)}%`,
-                      backgroundColor: sub.color,
-                    }}
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${sub.percentage}%`, backgroundColor: sub.color }}
                   />
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>{sub.tasks_completed} tasks completed</span>
                 </div>
               </div>
             ))}
           </div>
-        </Card>
-
-        {/* Academic Workload Forecast & Weekly Review */}
-        <Card className="p-6 space-y-4">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Award className="w-5 h-5 text-amber-500" />
-            Weekly Academic Review & Forecast
-          </h2>
-          <p className="text-xs text-slate-500">
-            Synthesized insights on your pacing and upcoming semester pressure.
-          </p>
-
-          <div className="space-y-3 pt-2 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
-              <span className="font-bold text-slate-900 dark:text-white">Upcoming Deadlines</span>
-              <p className="text-slate-500">
-                You have <strong>{analytics.upcoming_deadlines_count} pending deadlines</strong> arriving in the next 7 days.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
-              <span className="font-bold text-slate-900 dark:text-white">Cognitive Load Check</span>
-              <p className="text-slate-500">
-                Weekly scheduled hours are currently well-balanced. Ensure to take your short Pomodoro breaks to prevent end-of-week burnout.
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300">
-              <span className="font-bold">Consistency Highlight:</span>
-              <p className="mt-0.5">
-                Maintaining your {analytics.consistency_streak_days}-day streak places you in the top tier of consistent student execution.
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
+        )}
+      </Card>
     </div>
   );
 };
-

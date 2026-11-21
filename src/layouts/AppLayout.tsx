@@ -18,11 +18,15 @@ import {
   X,
   ShieldCheck,
   ChevronRight,
+  Plus,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { Avatar } from '../components/avatar/Avatar';
+import { useGreetingQuote } from '../utils/greetingQuotes';
 
 export const AppLayout: React.FC = () => {
   const { user, signOut, isConfigured } = useAuth();
@@ -33,11 +37,15 @@ export const AppLayout: React.FC = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [overdueCount, setOverdueCount] = useState(0);
 
+  const { greeting, emoji } = useGreetingQuote(user?.id || 'student');
+
   // Monitor overdue tasks for the Recovery Engine badge
   useEffect(() => {
+    let mounted = true;
     const checkOverdue = async () => {
       try {
         const tasks = await api.tasks.getTasks();
+        if (!mounted) return;
         const now = new Date();
         const count = tasks.filter((t) => !t.is_completed && new Date(t.due_date) < now).length;
         setOverdueCount(count);
@@ -46,6 +54,9 @@ export const AppLayout: React.FC = () => {
       }
     };
     checkOverdue();
+    return () => {
+      mounted = false;
+    };
   }, [location.pathname]);
 
   const navItems = [
@@ -72,34 +83,36 @@ export const AppLayout: React.FC = () => {
     navigate('/login');
   };
 
+  const currentNav = navItems.find((item) => item.path === location.pathname) || navItems[0];
+
   return (
-    <div className="min-h-screen flex bg-surface-light dark:bg-surface-dark text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex bg-paper-canvas dark:bg-surface-dark text-charcoal-primary dark:text-slate-100 transition-colors">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 border-r border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 backdrop-blur-md z-30 shrink-0">
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 border-r border-paper-border dark:border-slate-800 bg-white dark:bg-slate-900 z-30 shrink-0">
         {/* Brand */}
-        <div className="h-16 px-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80">
-          <Link to="/app" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm shadow-brand-500/30">
-              <GraduationCap className="w-5 h-5" />
+        <div className="h-16 px-6 flex items-center justify-between border-b border-paper-border dark:border-slate-800">
+          <Link to="/app" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-subtle group-hover:scale-105 transition-transform">
+              <GraduationCap className="w-4 h-4" />
             </div>
-            <span className="font-bold text-lg tracking-tight text-slate-900 dark:text-white">
-              Study<span className="text-brand-600 dark:text-brand-400">Flow</span>
+            <span className="font-editorial text-2xl font-semibold tracking-tight text-charcoal-primary dark:text-white">
+              StudyFlow
             </span>
           </Link>
           <button
             onClick={toggleTheme}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 text-charcoal-muted hover:text-charcoal-primary dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
             title="Toggle Theme"
           >
             {resolvedTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
           </button>
         </div>
 
-        {/* Database Mode Pill */}
-        <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px]">
-          <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 font-medium">
+        {/* Database Status Indicator */}
+        <div className="px-5 py-2.5 bg-paper-canvas/70 dark:bg-slate-800/40 border-b border-paper-border dark:border-slate-800/80 flex items-center justify-between text-[11px]">
+          <span className="text-charcoal-muted dark:text-slate-400 flex items-center gap-1.5 font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            {isConfigured ? 'Supabase Cloud RLS' : 'Offline / Local Persistence'}
+            {isConfigured ? 'Supabase RLS Active' : 'Offline Mode'}
           </span>
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </div>
@@ -114,16 +127,16 @@ export const AppLayout: React.FC = () => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                   isActive
-                    ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-300 shadow-sm border border-brand-200/50 dark:border-brand-800/50'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-300 font-semibold border border-brand-200/60 dark:border-brand-800/60 shadow-xs'
+                    : 'text-charcoal-muted dark:text-slate-400 hover:bg-paper-100 dark:hover:bg-slate-800/60 hover:text-charcoal-primary dark:hover:text-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <Icon
                     className={`w-4 h-4 transition-colors ${
-                      isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                      isActive ? 'text-brand-600 dark:text-brand-400' : 'text-charcoal-light dark:text-slate-500 group-hover:text-charcoal-primary dark:group-hover:text-slate-300'
                     }`}
                   />
                   <span>{item.label}</span>
@@ -141,32 +154,29 @@ export const AppLayout: React.FC = () => {
         </nav>
 
         {/* User Profile Card in Footer */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50">
+        <div className="p-3.5 border-t border-paper-border dark:border-slate-800">
+          <div className="flex items-center justify-between p-2 rounded-xl bg-paper-canvas dark:bg-slate-800/50 border border-paper-border dark:border-slate-700/60">
             <Link to="/app/settings" className="flex items-center gap-2.5 min-w-0">
-              <img
-                src={
-                  user?.avatar_url ||
-                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=128&q=80'
-                }
-                alt={user?.full_name || 'Student Avatar'}
-                className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+              <Avatar
+                src={user?.avatar_url}
+                username={user?.full_name || user?.username || 'Student'}
+                size={34}
               />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                <p className="text-xs font-semibold text-charcoal-primary dark:text-white truncate">
                   {user?.full_name || user?.username || 'Student'}
                 </p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                <p className="text-[10px] text-charcoal-light dark:text-slate-400 truncate">
                   @{user?.username || 'alex_chen'}
                 </p>
               </div>
             </Link>
             <button
               onClick={handleSignOut}
-              className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors"
+              className="p-1.5 text-charcoal-light hover:text-rose-500 dark:text-slate-400 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors"
               title="Sign Out"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -174,27 +184,68 @@ export const AppLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile Header */}
-        <header className="lg:hidden h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-4 z-20">
+        {/* Desktop Top Header Bar */}
+        <header className="hidden lg:flex h-16 border-b border-paper-border dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md items-center justify-between px-8 z-20">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold uppercase tracking-wider text-charcoal-light dark:text-slate-400">
+              Workspace
+            </span>
+            <ChevronRight size={13} className="text-charcoal-light" />
+            <h2 className="font-editorial text-lg font-medium text-charcoal-primary dark:text-white">
+              {currentNav.label}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="text-xs italic font-editorial text-brand-700 dark:text-brand-300">
+              {emoji} {greeting}, {user?.full_name?.split(' ')[0] || user?.username || 'Scholar'}
+            </span>
+
+            <div className="h-4 w-px bg-paper-border dark:border-slate-700" />
+
+            <Link to="/app/tasks">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium shadow-xs transition-colors"
+              >
+                <Plus size={13} />
+                <span>Add Task</span>
+              </button>
+            </Link>
+
+            <Link to="/app/focus">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-paper-border dark:border-slate-700 hover:bg-paper-100 dark:hover:bg-slate-800 text-charcoal-primary dark:text-slate-200 text-xs font-medium transition-colors"
+              >
+                <Timer size={13} />
+                <span>Focus Mode</span>
+              </button>
+            </Link>
+          </div>
+        </header>
+
+        {/* Mobile Header Bar */}
+        <header className="lg:hidden h-16 border-b border-paper-border dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-4 z-20">
           <Link to="/app" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white">
-              <GraduationCap className="w-5 h-5" />
+              <GraduationCap className="w-4 h-4" />
             </div>
-            <span className="font-bold text-base text-slate-900 dark:text-white">StudyFlow</span>
+            <span className="font-editorial text-xl font-bold text-charcoal-primary dark:text-white">StudyFlow</span>
           </Link>
 
           <div className="flex items-center gap-2">
             <button
               onClick={toggleTheme}
-              className="p-2 text-slate-500 dark:text-slate-400 rounded-lg"
+              className="p-2 text-charcoal-muted dark:text-slate-400 rounded-lg"
             >
-              {resolvedTheme === 'dark' ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+              {resolvedTheme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="p-2 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-2 text-charcoal-primary dark:text-slate-200 rounded-lg hover:bg-paper-100 dark:hover:bg-slate-800"
             >
-              <Menu className="w-6 h-6" />
+              <Menu className="w-5 h-5" />
             </button>
           </div>
         </header>
@@ -207,16 +258,16 @@ export const AppLayout: React.FC = () => {
               onClick={() => setMobileSidebarOpen(false)}
             />
             <div className="fixed inset-y-0 left-0 w-72 bg-white dark:bg-slate-900 shadow-2xl flex flex-col">
-              <div className="h-16 px-6 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+              <div className="h-16 px-6 flex items-center justify-between border-b border-paper-border dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white">
-                    <GraduationCap className="w-5 h-5" />
+                    <GraduationCap className="w-4 h-4" />
                   </div>
-                  <span className="font-bold text-lg text-slate-900 dark:text-white">StudyFlow</span>
+                  <span className="font-editorial text-xl font-bold text-charcoal-primary dark:text-white">StudyFlow</span>
                 </div>
                 <button
                   onClick={() => setMobileSidebarOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600"
+                  className="p-1.5 text-charcoal-light hover:text-charcoal-primary"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -231,10 +282,10 @@ export const AppLayout: React.FC = () => {
                       key={item.path}
                       to={item.path}
                       onClick={() => setMobileSidebarOpen(false)}
-                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${
+                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium ${
                         isActive
-                          ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-300'
-                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          ? 'bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-300 font-semibold'
+                          : 'text-charcoal-muted dark:text-slate-400 hover:bg-paper-100 dark:hover:bg-slate-800'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -251,10 +302,10 @@ export const AppLayout: React.FC = () => {
                 })}
               </nav>
 
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="p-4 border-t border-paper-border dark:border-slate-800">
                 <button
                   onClick={handleSignOut}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 text-sm text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs sm:text-sm text-rose-600 dark:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out
@@ -266,7 +317,7 @@ export const AppLayout: React.FC = () => {
 
         {/* Dynamic Page Outlet */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
             <Outlet />
           </div>
         </main>
@@ -274,4 +325,3 @@ export const AppLayout: React.FC = () => {
     </div>
   );
 };
-

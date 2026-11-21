@@ -8,7 +8,7 @@ interface AuthContextType {
   loading: boolean;
   isAuthenticated: boolean;
   isConfigured: boolean;
-  signIn: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (identifier: string, password: string) => Promise<{ success: boolean; error?: string; isUnconfirmedEmail?: boolean }>;
   signUp: (username: string, email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string; emailConfirmationRequired?: boolean }>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -56,9 +56,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (identifier: string, password: string) => {
     try {
-      const { user: authedUser, error } = await api.auth.signIn(identifier, password);
+      const { user: authedUser, error, isUnconfirmedEmail } = await api.auth.signIn(identifier, password);
       if (error) {
-        return { success: false, error };
+        return { success: false, error, isUnconfirmedEmail };
       }
       setUser(authedUser);
       return { success: true };

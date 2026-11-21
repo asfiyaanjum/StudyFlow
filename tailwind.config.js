@@ -30,16 +30,29 @@ export default {
           violet: '#8b5cf6',
         },
         surface: {
-          light: '#f8fafc',
-          dark: '#0f172a',
+          light: '#faf9f6', // Warm ivory canvas
+          dark: '#0b0f17', // Deep obsidian canvas
           cardLight: '#ffffff',
-          cardDark: '#1e293b',
-          borderLight: '#e2e8f0',
-          borderDark: '#334155',
-        }
+          cardDark: '#151d2a',
+          borderLight: '#e8e5df',
+          borderDark: '#222f3e',
+        },
+        paper: {
+          50: '#faf9f6',
+          100: '#f5f3ef',
+          200: '#e8e5df',
+          300: '#dcd7ce',
+          400: '#b8b2a5',
+          500: '#8c8577',
+          600: '#6a6356',
+          700: '#4e493f',
+          800: '#34302a',
+          900: '#1b1a1e',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        serif: ['Newsreader', 'ui-serif', 'Georgia', 'serif'],
       },
       boxShadow: {
         subtle: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03)',

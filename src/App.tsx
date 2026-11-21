@@ -18,6 +18,7 @@ import { RegisterPage } from './pages/auth/RegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
+import { DesignSystemPage } from './pages/public/DesignSystemPage';
 
 // App Pages
 import { DashboardPage } from './pages/app/DashboardPage';
@@ -66,6 +67,9 @@ export const App: React.FC = () => {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
       </Route>
+
+      {/* Standalone Design System Showcase */}
+      <Route path="/design-system" element={<DesignSystemPage />} />
 
       {/* Protected Student Workspace */}
       <Route

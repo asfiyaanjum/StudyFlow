@@ -8,6 +8,51 @@
   }
 }
 
+/* Editorial Serif & Focus Utilities */
+.font-editorial {
+  font-family: 'Newsreader', ui-serif, Georgia, serif;
+  font-style: italic;
+}
+
+/* StudyFlow Indigo Checkbox Accent */
+input[type="checkbox"] {
+  accent-color: #4f46e5;
+}
+
+.focus-ring {
+  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

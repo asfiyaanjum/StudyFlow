@@ -9,6 +9,7 @@ import {
   Trash2,
   Edit2,
   Sparkles,
+  Layers,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { Subject, SyllabusUnit, SyllabusTopic } from '../../types';
@@ -17,6 +18,9 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ProgressBar } from '../../components/ui/ProgressBar';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 export const SubjectsPage: React.FC = () => {
   const { success, error: toastError } = useToast();
@@ -44,20 +48,25 @@ export const SubjectsPage: React.FC = () => {
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
   const [targetUnitId, setTargetUnitId] = useState('');
   const [topicTitle, setTopicTitle] = useState('');
-  const [topicMinutes, setTopicMinutes] = useState(60);
+  const [topicEstMinutes, setTopicEstMinutes] = useState(45);
 
-  const loadSubjects = async () => {
+  // Open unit accordions
+  const [expandedUnitIds, setExpandedUnitIds] = useState<Set<string>>(new Set());
+
+  const loadData = async () => {
     try {
       setLoading(true);
-      const data = await api.subjects.getSubjects();
-      setSubjects(data);
-      if (data.length > 0) {
-        // preserve selected subject or default to first
-        const current = selectedSubject ? data.find((s) => s.id === selectedSubject.id) : data[0];
-        const active = current || data[0];
+      const subs = await api.subjects.getSubjects();
+      setSubjects(subs);
+      if (subs.length > 0) {
+        const active = selectedSubject ? subs.find((s) => s.id === selectedSubject.id) || subs[0] : subs[0];
         setSelectedSubject(active);
-        const units = await api.subjects.getSyllabus(active.id);
+        const units = await api.syllabus.getUnits(active.id);
         setSyllabusUnits(units);
+        setExpandedUnitIds(new Set(units.map((u: SyllabusUnit) => u.id)));
+      } else {
+        setSelectedSubject(null);
+        setSyllabusUnits([]);
       }
     } catch (e) {
       console.error(e);
@@ -67,25 +76,33 @@ export const SubjectsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadSubjects();
+    loadData();
   }, []);
 
   const handleSelectSubject = async (sub: Subject) => {
     setSelectedSubject(sub);
     try {
-      const units = await api.subjects.getSyllabus(sub.id);
+      const units = await api.syllabus.getUnits(sub.id);
       setSyllabusUnits(units);
+      setExpandedUnitIds(new Set(units.map((u: SyllabusUnit) => u.id)));
     } catch (e) {
       console.error(e);
     }
   };
 
+  const toggleUnitAccordion = (unitId: string) => {
+    setExpandedUnitIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(unitId)) next.delete(unitId);
+      else next.add(unitId);
+      return next;
+    });
+  };
+
+  // Create Subject
   const handleCreateSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subjectName.trim()) {
-      toastError('Validation', 'Subject name is required.');
-      return;
-    }
+    if (!subjectName.trim()) return;
 
     try {
       const created = await api.subjects.createSubject({
@@ -93,355 +110,420 @@ export const SubjectsPage: React.FC = () => {
         name: subjectName,
         code: subjectCode,
         color: subjectColor,
-        credit_hours: creditHours,
+        credit_hours: Number(creditHours),
         instructor,
       });
-
-      setSubjects((prev) => [...prev, created]);
-      setSelectedSubject(created);
-      setSyllabusUnits([]);
-      success('Subject Created', `"${created.name}" was added to your curriculum.`);
+      success('Subject Created', `Added ${subjectName} to your curriculum.`);
       setIsSubjectModalOpen(false);
+      setSubjectName('');
+      setSubjectCode('');
+      await loadData();
+      handleSelectSubject(created);
     } catch (err: any) {
       toastError('Error', err.message);
     }
   };
 
+  const handleDeleteSubject = async (subjectId: string) => {
+    if (!window.confirm('Delete this subject and all its syllabus units?')) return;
+    try {
+      await api.subjects.deleteSubject(subjectId);
+      success('Subject Deleted', 'Removed from curriculum.');
+      await loadData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Create Unit
   const handleCreateUnit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSubject) return;
+    if (!selectedSubject || !unitTitle.trim()) return;
 
     try {
-      const created = await api.subjects.createUnit({
-        subject_id: selectedSubject.id,
+      await api.syllabus.createUnit({
         user_id: 'user',
+        subject_id: selectedSubject.id,
         title: unitTitle,
-        unit_number: unitNumber,
+        unit_number: Number(unitNumber),
         description: unitDescription,
       });
-
-      setSyllabusUnits((prev) => [...prev, { ...created, topics: [], progress_percentage: 0 }]);
-      success('Unit Added', `"${created.title}" added to syllabus.`);
+      success('Unit Added', `Unit ${unitNumber} added to ${selectedSubject.name}.`);
       setIsUnitModalOpen(false);
       setUnitTitle('');
       setUnitDescription('');
+      const updated = await api.syllabus.getUnits(selectedSubject.id);
+      setSyllabusUnits(updated);
     } catch (err: any) {
       toastError('Error', err.message);
     }
   };
 
+  const handleDeleteUnit = async (unitId: string) => {
+    if (!window.confirm('Delete this unit?')) return;
+    try {
+      await api.syllabus.deleteUnit(unitId);
+      setSyllabusUnits((prev) => prev.filter((u) => u.id !== unitId));
+      success('Unit Deleted', 'Unit removed.');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Create Topic
   const handleCreateTopic = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetUnitId) return;
+    if (!targetUnitId || !topicTitle.trim()) return;
 
     try {
-      const created = await api.subjects.createTopic({
-        unit_id: targetUnitId,
+      await api.syllabus.createTopic({
         user_id: 'user',
+        unit_id: targetUnitId,
         title: topicTitle,
-        estimated_minutes: topicMinutes,
+        estimated_minutes: Number(topicEstMinutes),
         is_completed: false,
       });
-
-      setSyllabusUnits((prev) =>
-        prev.map((unit) => {
-          if (unit.id === targetUnitId) {
-            const nextTopics = [...(unit.topics || []), created];
-            const completedCount = nextTopics.filter((t) => t.is_completed).length;
-            const pct = Math.round((completedCount / nextTopics.length) * 100);
-            return { ...unit, topics: nextTopics, progress_percentage: pct };
-          }
-          return unit;
-        })
-      );
-
-      success('Topic Added', `Topic "${topicTitle}" added.`);
+      success('Topic Added', `Added "${topicTitle}".`);
       setIsTopicModalOpen(false);
       setTopicTitle('');
-    } catch (err: any) {
-      toastError('Error', err.message);
-    }
-  };
-
-  const handleToggleTopic = async (topic: SyllabusTopic) => {
-    try {
-      const updated = await api.subjects.toggleTopicComplete(topic.id, !topic.is_completed);
-
-      setSyllabusUnits((prev) =>
-        prev.map((unit) => {
-          if (unit.id === topic.unit_id) {
-            const nextTopics = (unit.topics || []).map((t) => (t.id === topic.id ? updated : t));
-            const completedCount = nextTopics.filter((t) => t.is_completed).length;
-            const pct = Math.round((completedCount / nextTopics.length) * 100);
-            return { ...unit, topics: nextTopics, progress_percentage: pct };
-          }
-          return unit;
-        })
-      );
-
-      // Refresh subject summary
-      const updatedSubjects = await api.subjects.getSubjects();
-      setSubjects(updatedSubjects);
-
-      if (updated.is_completed) {
-        success('Topic Mastered', `Checked off "${topic.title}"!`);
+      if (selectedSubject) {
+        const updated = await api.syllabus.getUnits(selectedSubject.id);
+        setSyllabusUnits(updated);
       }
     } catch (err: any) {
       toastError('Error', err.message);
     }
   };
 
-  const colors = [
-    '#6366f1', // Indigo
-    '#0284c7', // Sky
-    '#10b981', // Emerald
-    '#f59e0b', // Amber
-    '#f43f5e', // Rose
-    '#8b5cf6', // Purple
-  ];
+  const handleToggleTopic = async (topicId: string) => {
+    try {
+      const updated = await api.syllabus.toggleTopic(topicId);
+      setSyllabusUnits((prev) =>
+        prev.map((unit) => ({
+          ...unit,
+          topics: unit.topics?.map((t) => (t.id === topicId ? updated : t)),
+        }))
+      );
+      if (updated.is_completed) {
+        success('Topic Mastered', `Mastered "${updated.title}"!`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteTopic = async (topicId: string) => {
+    try {
+      await api.syllabus.deleteTopic(topicId);
+      setSyllabusUnits((prev) =>
+        prev.map((unit) => ({
+          ...unit,
+          topics: unit.topics?.filter((t) => t.id !== topicId),
+        }))
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Title & Add Subject */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-paper-border dark:border-slate-800 pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Subjects & Syllabus Tracker
+          <h1 className="font-editorial text-3xl font-medium text-charcoal-primary dark:text-white tracking-tight">
+            Subjects & Syllabus Mastery
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Track official course syllabi, unit milestones, and conceptual topic mastery.
+          <p className="text-xs sm:text-sm text-charcoal-muted dark:text-slate-400 mt-0.5">
+            Organize course units, track discrete topics, and monitor exam readiness.
           </p>
         </div>
-
-        <Button onClick={() => setIsSubjectModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
-          New Subject
+        <Button onClick={() => setIsSubjectModalOpen(true)} leftIcon={<Plus size={16} />}>
+          Add Subject
         </Button>
       </div>
 
-      {/* Subject Pills Slider */}
-      <div className="flex items-center gap-3 overflow-x-auto pb-2">
-        {subjects.map((sub) => {
-          const isSelected = selectedSubject?.id === sub.id;
+      {subjects.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="No enrolled subjects yet"
+          subtitle="Add your course subjects (e.g. Algorithms, Linear Algebra) to begin mapping syllabus units."
+          action={
+            <Button size="sm" onClick={() => setIsSubjectModalOpen(true)}>
+              + Add First Subject
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Subjects Grid */}
+          <div className="space-y-3 lg:col-span-1">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-charcoal-light dark:text-slate-400 px-1">
+              Enrolled Courses ({subjects.length})
+            </h3>
 
-          return (
-            <button
-              key={sub.id}
-              onClick={() => handleSelectSubject(sub)}
-              className={`px-4 py-3 rounded-2xl border text-left transition-all shrink-0 flex items-center gap-3 ${
-                isSelected
-                  ? 'border-brand-500 bg-white dark:bg-slate-900 shadow-md ring-2 ring-brand-500/20'
-                  : 'border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-900'
-              }`}
-            >
-              <div
-                className="w-3.5 h-3.5 rounded-full shrink-0"
-                style={{ backgroundColor: sub.color }}
-              />
-              <div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white">
-                  {sub.code || sub.name}
-                </p>
-                <p className="text-[10px] text-slate-500">
-                  {sub.progress_percentage || 0}% Complete
-                </p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+            <div className="space-y-2.5">
+              {subjects.map((sub) => {
+                const isSelected = selectedSubject?.id === sub.id;
+                const progress = sub.progress_percentage || 0;
 
-      {/* Selected Subject Details & Syllabus Units */}
-      {selectedSubject ? (
-        <div className="space-y-6">
-          {/* Subject Banner Card */}
-          <Card
-            className="p-6 border-t-4"
-            style={{ borderTopColor: selectedSubject.color }}
-          >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="text-xs font-bold px-2.5 py-0.5 rounded text-white"
-                    style={{ backgroundColor: selectedSubject.color }}
-                  >
-                    {selectedSubject.code || 'COURSE'}
-                  </span>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    {selectedSubject.name}
-                  </h2>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  {selectedSubject.instructor && <span>👨‍🏫 {selectedSubject.instructor}</span>}
-                  {selectedSubject.credit_hours && <span>🎓 {selectedSubject.credit_hours} Credits</span>}
-                </div>
-              </div>
-
-              {/* Progress summary */}
-              <div className="text-right space-y-1.5 min-w-[200px]">
-                <div className="flex items-baseline justify-between text-xs">
-                  <span className="font-semibold text-slate-500">Syllabus Mastery</span>
-                  <span className="font-extrabold text-slate-900 dark:text-white">
-                    {selectedSubject.progress_percentage || 0}%
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                return (
                   <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{
-                      width: `${selectedSubject.progress_percentage || 0}%`,
-                      backgroundColor: selectedSubject.color,
-                    }}
-                  />
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  {selectedSubject.completed_topics_count || 0} of {selectedSubject.topics_count || 0} topics completed
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          {/* Syllabus Units Breakdown */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-brand-600" />
-                Syllabus Units & Topics
-              </h3>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setUnitNumber(syllabusUnits.length + 1);
-                  setIsUnitModalOpen(true);
-                }}
-                leftIcon={<Plus className="w-3.5 h-3.5" />}
-              >
-                Add Unit
-              </Button>
-            </div>
-
-            {syllabusUnits.length === 0 ? (
-              <Card className="py-12 text-center space-y-3">
-                <BookOpen className="w-10 h-10 text-slate-400 mx-auto" />
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  No syllabus units added yet
-                </p>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Add units and topics from your course syllabus to track your conceptual progress through the semester.
-                </p>
-                <Button size="sm" onClick={() => setIsUnitModalOpen(true)}>
-                  Add First Unit
-                </Button>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {syllabusUnits.map((unit) => (
-                  <Card key={unit.id} className="p-5 space-y-4">
-                    {/* Unit Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            Unit {unit.unit_number}
-                          </span>
-                          <h4 className="text-base font-bold text-slate-900 dark:text-white">
-                            {unit.title}
-                          </h4>
-                        </div>
-                        {unit.description && (
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {unit.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-brand-600 dark:text-brand-400">
-                          {unit.progress_percentage || 0}% Complete
+                    key={sub.id}
+                    onClick={() => handleSelectSubject(sub)}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-white dark:bg-slate-900 border-brand-500 shadow-card ring-2 ring-brand-500/20'
+                        : 'bg-white dark:bg-slate-900 border-paper-border dark:border-slate-800 shadow-xs hover:border-paper-border/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: sub.color }}
+                        />
+                        <span className="font-semibold text-xs sm:text-sm text-charcoal-primary dark:text-white">
+                          {sub.name}
                         </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setTargetUnitId(unit.id);
-                            setIsTopicModalOpen(true);
-                          }}
-                          leftIcon={<Plus className="w-3 h-3" />}
-                        >
-                          Add Topic
-                        </Button>
                       </div>
-                    </div>
-
-                    {/* Topics List */}
-                    <div className="space-y-2">
-                      {unit.topics && unit.topics.length > 0 ? (
-                        unit.topics.map((topic) => (
-                          <div
-                            key={topic.id}
-                            className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <button
-                                onClick={() => handleToggleTopic(topic)}
-                                className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors shrink-0 ${
-                                  topic.is_completed
-                                    ? 'bg-emerald-500 border-emerald-500 text-white'
-                                    : 'border-slate-300 dark:border-slate-600 hover:border-brand-500'
-                                }`}
-                              >
-                                {topic.is_completed && <CheckCircle2 className="w-3.5 h-3.5" />}
-                              </button>
-                              <span
-                                className={`text-xs font-medium text-slate-800 dark:text-slate-200 truncate ${
-                                  topic.is_completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                                }`}
-                              >
-                                {topic.title}
-                              </span>
-                            </div>
-
-                            <span className="text-[11px] text-slate-400 flex items-center gap-1 shrink-0">
-                              <Clock className="w-3 h-3" />
-                              {topic.estimated_minutes || 45}m
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-slate-400 italic py-2">
-                          No topics added to this unit yet.
-                        </p>
+                      {sub.code && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-paper-canvas dark:bg-slate-800 text-charcoal-muted dark:text-slate-400">
+                          {sub.code}
+                        </span>
                       )}
                     </div>
-                  </Card>
-                ))}
+
+                    <div className="mt-3 space-y-1.5">
+                      <div className="flex justify-between items-center text-[11px] text-charcoal-muted dark:text-slate-400">
+                        <span>{sub.completed_topics_count || 0} / {sub.topics_count || 0} Topics</span>
+                        <span className="font-semibold text-brand-600 dark:text-brand-400">{progress}%</span>
+                      </div>
+                      <ProgressBar value={progress} size="xs" variant="brand" />
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-paper-border dark:border-slate-800/80 flex justify-between items-center text-[11px] text-charcoal-light dark:text-slate-400">
+                      <span>{sub.credit_hours ? `${sub.credit_hours} Credits` : '3 Credits'}</span>
+                      {sub.instructor && <span>Prof. {sub.instructor}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right Column: Syllabus Units & Topics for Selected Subject */}
+          <div className="lg:col-span-2 space-y-4">
+            {selectedSubject && (
+              <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-3.5 h-3.5 rounded-full"
+                      style={{ backgroundColor: selectedSubject.color }}
+                    />
+                    <h2 className="font-editorial text-2xl font-medium text-charcoal-primary dark:text-white">
+                      {selectedSubject.name}
+                    </h2>
+                    {selectedSubject.code && (
+                      <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-paper-canvas dark:bg-slate-800 text-charcoal-muted">
+                        {selectedSubject.code}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-charcoal-muted dark:text-slate-400">
+                    {syllabusUnits.length} syllabus units defined • {selectedSubject.credit_hours || 3} credit hours
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setUnitNumber(syllabusUnits.length + 1);
+                      setIsUnitModalOpen(true);
+                    }}
+                    leftIcon={<Plus size={14} />}
+                  >
+                    Add Unit
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSubject(selectedSubject.id)}
+                    className="p-2 text-charcoal-light hover:text-rose-500 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                    title="Delete Subject"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Units List */}
+            {syllabusUnits.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-dashed border-paper-border dark:border-slate-800 text-center space-y-3">
+                <Layers className="w-8 h-8 mx-auto text-charcoal-light" />
+                <h4 className="text-sm font-semibold text-charcoal-primary dark:text-white">
+                  No syllabus units created
+                </h4>
+                <p className="text-xs text-charcoal-muted dark:text-slate-400 max-w-sm mx-auto">
+                  Add units (e.g., Unit 1: Memory Management) to start breaking down your semester exam prep.
+                </p>
+                <Button size="sm" onClick={() => setIsUnitModalOpen(true)}>
+                  + Add Unit
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {syllabusUnits.map((unit) => {
+                  const isExpanded = expandedUnitIds.has(unit.id);
+                  const topics = unit.topics || [];
+                  const completedCount = topics.filter((t) => t.is_completed).length;
+                  const unitProgress = topics.length > 0 ? Math.round((completedCount / topics.length) * 100) : 0;
+
+                  return (
+                    <div
+                      key={unit.id}
+                      className="rounded-2xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 shadow-xs overflow-hidden"
+                    >
+                      {/* Unit Header Accordion Toggle */}
+                      <div
+                        onClick={() => toggleUnitAccordion(unit.id)}
+                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-paper-canvas/50 dark:hover:bg-slate-800/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            className="text-charcoal-light hover:text-charcoal-primary"
+                          >
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </button>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-brand-600 dark:text-brand-400">
+                                Unit {unit.unit_number}
+                              </span>
+                              <span className="font-semibold text-sm text-charcoal-primary dark:text-white">
+                                {unit.title}
+                              </span>
+                            </div>
+                            {unit.description && (
+                              <p className="text-xs text-charcoal-muted dark:text-slate-400 mt-0.5 line-clamp-1">
+                                {unit.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="w-24 text-right hidden sm:block">
+                            <span className="text-[11px] font-semibold text-charcoal-primary dark:text-white">
+                              {unitProgress}%
+                            </span>
+                            <ProgressBar value={unitProgress} size="xs" variant="brand" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTargetUnitId(unit.id);
+                              setIsTopicModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg border border-paper-border dark:border-slate-700 hover:bg-paper-100 text-charcoal-primary text-xs font-medium"
+                            title="Add topic to this unit"
+                          >
+                            <Plus size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteUnit(unit.id);
+                            }}
+                            className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
+                            title="Delete Unit"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Topics Checklist Drawer */}
+                      {isExpanded && (
+                        <div className="px-5 pb-4 pt-1 border-t border-paper-border dark:border-slate-800/80 bg-paper-canvas/30 dark:bg-slate-900/40 space-y-2">
+                          {topics.length === 0 ? (
+                            <p className="text-xs text-charcoal-muted dark:text-slate-400 py-2 italic">
+                              No topics added yet. Click "+" to add topics.
+                            </p>
+                          ) : (
+                            topics.map((topic) => (
+                              <div
+                                key={topic.id}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-paper-border dark:border-slate-800 text-xs"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <Checkbox
+                                    checked={topic.is_completed}
+                                    onChange={() => handleToggleTopic(topic.id)}
+                                  />
+                                  <span
+                                    className={`truncate ${
+                                      topic.is_completed
+                                        ? 'line-through text-charcoal-muted dark:text-slate-500'
+                                        : 'text-charcoal-primary dark:text-white font-medium'
+                                    }`}
+                                  >
+                                    {topic.title}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {topic.estimated_minutes && (
+                                    <span className="text-[10px] text-charcoal-light">
+                                      ~{topic.estimated_minutes}m
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTopic(topic.id)}
+                                    className="text-charcoal-light hover:text-rose-500 p-1"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Add Subject Modal */}
+      {/* Subject Modal */}
       <Modal
         isOpen={isSubjectModalOpen}
         onClose={() => setIsSubjectModalOpen(false)}
-        title="Add Academic Subject"
-        description="Add a new course or subject to your StudyFlow curriculum."
+        title="Add Enrolled Subject"
+        description="Enter course details for your semester."
       >
-        <form onSubmit={handleCreateSubject} className="space-y-4 pt-2">
+        <form onSubmit={handleCreateSubject} className="space-y-4">
           <Input
             label="Subject Name"
-            placeholder="e.g. Data Structures & Algorithms"
+            required
+            placeholder="e.g. Operating Systems"
             value={subjectName}
             onChange={(e) => setSubjectName(e.target.value)}
-            required
           />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input
               label="Course Code"
-              placeholder="e.g. CS 106B"
+              placeholder="e.g. CS 301"
               value={subjectCode}
               onChange={(e) => setSubjectCode(e.target.value)}
             />
@@ -449,40 +531,32 @@ export const SubjectsPage: React.FC = () => {
               label="Credit Hours"
               type="number"
               min={1}
-              max={10}
+              max={6}
               value={creditHours}
               onChange={(e) => setCreditHours(Number(e.target.value))}
             />
           </div>
-
-          <Input
-            label="Professor / Instructor"
-            placeholder="e.g. Prof. Julie Zelenski"
-            value={instructor}
-            onChange={(e) => setInstructor(e.target.value)}
-          />
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 tracking-wide uppercase">
-              Subject Color
-            </label>
-            <div className="flex items-center gap-3">
-              {colors.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setSubjectColor(c)}
-                  className={`w-8 h-8 rounded-full transition-transform ${
-                    subjectColor === c ? 'scale-110 ring-2 ring-offset-2 ring-slate-400' : ''
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Instructor Name"
+              placeholder="e.g. Prof. Alan Turing"
+              value={instructor}
+              onChange={(e) => setInstructor(e.target.value)}
+            />
+            <div>
+              <label className="block text-xs font-semibold text-charcoal-primary dark:text-slate-300 tracking-wide uppercase mb-1.5">
+                Accent Color
+              </label>
+              <input
+                type="color"
+                value={subjectColor}
+                onChange={(e) => setSubjectColor(e.target.value)}
+                className="w-full h-10 rounded-xl border border-paper-border cursor-pointer"
+              />
             </div>
           </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setIsSubjectModalOpen(false)}>
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
+            <Button variant="ghost" type="button" onClick={() => setIsSubjectModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit">Create Subject</Button>
@@ -490,44 +564,40 @@ export const SubjectsPage: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Add Unit Modal */}
+      {/* Unit Modal */}
       <Modal
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
-        title="Add Syllabus Unit"
-        description={`Add a major curriculum unit to ${selectedSubject?.name}.`}
+        title={`Add Syllabus Unit (${selectedSubject?.name})`}
+        description="Define a major module or chapter in this syllabus."
       >
-        <form onSubmit={handleCreateUnit} className="space-y-4 pt-2">
-          <Input
-            label="Unit Number"
-            type="number"
-            min={1}
-            value={unitNumber}
-            onChange={(e) => setUnitNumber(Number(e.target.value))}
-            required
-          />
-          <Input
-            label="Unit Title"
-            placeholder="e.g. Unit 3: Trees, Heaps & Graph Algorithms"
-            value={unitTitle}
-            onChange={(e) => setUnitTitle(e.target.value)}
-            required
-          />
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 tracking-wide uppercase">
-              Description (Optional)
-            </label>
-            <textarea
-              rows={2}
-              value={unitDescription}
-              onChange={(e) => setUnitDescription(e.target.value)}
-              placeholder="Key concepts covered in this unit..."
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-sm text-slate-900 dark:text-white"
+        <form onSubmit={handleCreateUnit} className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              label="Unit #"
+              type="number"
+              min={1}
+              value={unitNumber}
+              onChange={(e) => setUnitNumber(Number(e.target.value))}
             />
+            <div className="col-span-2">
+              <Input
+                label="Unit Title"
+                required
+                placeholder="e.g. Virtual Memory Management"
+                value={unitTitle}
+                onChange={(e) => setUnitTitle(e.target.value)}
+              />
+            </div>
           </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setIsUnitModalOpen(false)}>
+          <Input
+            label="Description (Optional)"
+            placeholder="Key concepts, algorithms, textbook chapters..."
+            value={unitDescription}
+            onChange={(e) => setUnitDescription(e.target.value)}
+          />
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
+            <Button variant="ghost" type="button" onClick={() => setIsUnitModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit">Add Unit</Button>
@@ -535,33 +605,31 @@ export const SubjectsPage: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Add Topic Modal */}
+      {/* Topic Modal */}
       <Modal
         isOpen={isTopicModalOpen}
         onClose={() => setIsTopicModalOpen(false)}
         title="Add Syllabus Topic"
-        description="Add a specific concept or chapter topic to master."
+        description="Add a discrete revision item to this unit."
       >
-        <form onSubmit={handleCreateTopic} className="space-y-4 pt-2">
+        <form onSubmit={handleCreateTopic} className="space-y-4">
           <Input
-            label="Topic Title"
-            placeholder="e.g. Binary Search Tree Traversals & Balancing"
+            label="Topic Name"
+            required
+            placeholder="e.g. Page Replacement Algorithms (FIFO, LRU)"
             value={topicTitle}
             onChange={(e) => setTopicTitle(e.target.value)}
-            required
           />
           <Input
-            label="Estimated Study Duration (Minutes)"
+            label="Estimated Revision Duration (Mins)"
             type="number"
-            min={15}
-            step={15}
-            value={topicMinutes}
-            onChange={(e) => setTopicMinutes(Number(e.target.value))}
-            required
+            min={10}
+            step={5}
+            value={topicEstMinutes}
+            onChange={(e) => setTopicEstMinutes(Number(e.target.value))}
           />
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-            <Button type="button" variant="outline" onClick={() => setIsTopicModalOpen(false)}>
+          <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
+            <Button variant="ghost" type="button" onClick={() => setIsTopicModalOpen(false)}>
               Cancel
             </Button>
             <Button type="submit">Add Topic</Button>
@@ -571,4 +639,3 @@ export const SubjectsPage: React.FC = () => {
     </div>
   );
 };
-

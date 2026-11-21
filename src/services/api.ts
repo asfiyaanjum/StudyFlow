@@ -135,10 +135,21 @@ export const api = {
         );
 
         if (funcError || !funcData || funcData.error) {
+          let serverErrorMsg = '';
+          if (funcError && 'context' in funcError && (funcError as any).context) {
+            try {
+              const body = await (funcError as any).context.json();
+              serverErrorMsg = body?.error || body?.message || '';
+            } catch (_) {
+              // fallback
+            }
+          }
+
+          const rawMsg = serverErrorMsg || funcData?.error || funcError?.message || '';
           const errMsg =
-            funcData?.error ||
-            funcError?.message ||
-            'Invalid username or password. Please verify your credentials.';
+            rawMsg && !rawMsg.toLowerCase().includes('non-2xx')
+              ? rawMsg
+              : 'Invalid username or password. Please verify your credentials.';
 
           if (
             errMsg.toLowerCase().includes('email not confirmed') ||
@@ -228,12 +239,22 @@ export const api = {
               username: cleanUsername,
               full_name: fullName?.trim() || cleanUsername,
             },
-            emailRedirectTo: `${window.location.origin}/login`,
+            emailRedirectTo: `${window.location.origin}/verify-email`,
           },
         });
 
         if (error) {
           return { user: null, error: error.message, emailConfirmationRequired: false };
+        }
+
+        // Supabase returns a user with empty identities when the email is already registered
+        // and email confirmation / privacy protection is enabled.
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          return {
+            user: null,
+            error: 'An account with this email address already exists. Please sign in or reset your password.',
+            emailConfirmationRequired: false,
+          };
         }
 
         const emailConfirmationRequired = !data.session;
@@ -267,7 +288,7 @@ export const api = {
           type: 'signup',
           email: email.trim(),
           options: {
-            emailRedirectTo: `${window.location.origin}/login`,
+            emailRedirectTo: `${window.location.origin}/verify-email`,
           },
         });
         return { success: !error, error: error ? error.message : null };
@@ -543,6 +564,18 @@ export const api = {
 
       if (error) throw error;
       return data as SyllabusTopic;
+    },
+
+    async deleteUnit(unitId: string): Promise<void> {
+      await requireAuthUser();
+      const { error } = await supabase.from('syllabus_units').delete().eq('id', unitId);
+      if (error) throw error;
+    },
+
+    async deleteTopic(topicId: string): Promise<void> {
+      await requireAuthUser();
+      const { error } = await supabase.from('syllabus_topics').delete().eq('id', topicId);
+      if (error) throw error;
     },
   },
 
@@ -991,6 +1024,49 @@ export const api = {
         upcoming_deadlines_count: upcomingDeadlines,
         overloaded_days_count: 0,
       };
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // 10. SYLLABUS & COMPATIBILITY HELPERS
+  // --------------------------------------------------------------------------
+  syllabus: {
+    async getUnits(subjectId: string): Promise<SyllabusUnit[]> {
+      return api.subjects.getSyllabus(subjectId);
+    },
+    async createUnit(unit: Omit<SyllabusUnit, 'id' | 'created_at' | 'updated_at'>): Promise<SyllabusUnit> {
+      return api.subjects.createUnit(unit);
+    },
+    async deleteUnit(unitId: string): Promise<void> {
+      return api.subjects.deleteUnit(unitId);
+    },
+    async createTopic(topic: Omit<SyllabusTopic, 'id' | 'created_at' | 'updated_at'>): Promise<SyllabusTopic> {
+      return api.subjects.createTopic(topic);
+    },
+    async toggleTopic(topicId: string): Promise<SyllabusTopic> {
+      await requireAuthUser();
+      const { data: current, error: fetchErr } = await supabase
+        .from('syllabus_topics')
+        .select('is_completed')
+        .eq('id', topicId)
+        .single();
+      if (fetchErr) throw fetchErr;
+      return api.subjects.toggleTopicComplete(topicId, !current?.is_completed);
+    },
+    async deleteTopic(topicId: string): Promise<void> {
+      return api.subjects.deleteTopic(topicId);
+    },
+  },
+
+  profile: {
+    async updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
+      return api.auth.updateProfile(updates);
+    },
+  },
+
+  recovery: {
+    async acceptSuggestion(suggestionId: string): Promise<void> {
+      // Compatibility stub
     },
   },
 };
