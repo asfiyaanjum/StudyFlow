@@ -42,7 +42,8 @@ import {
 
 type SessionStatus = 'idle' | 'running' | 'paused' | 'break' | 'completed' | 'interrupted';
 
-const PRESET_DURATIONS = [15, 25, 45, 50, 60, 90, 100, 125, 150, 200];
+// Presets: Keep ONLY 15, 25, 60, 150 minutes in this exact order
+const PRESET_DURATIONS = [15, 25, 60, 150];
 const BREAK_DURATION_OPTIONS = [3, 5, 10, 15];
 
 export const FocusTimerPage: React.FC = () => {
@@ -87,6 +88,14 @@ export const FocusTimerPage: React.FC = () => {
     totalElapsedMinutes: number;
     isInterrupted?: boolean;
   } | null>(null);
+
+  // References to keep current values accessible in callbacks/effects without stale closures
+  const focusDurationMinutesRef = useRef(focusDurationMinutes);
+  focusDurationMinutesRef.current = focusDurationMinutes;
+  const actualFocusSecondsRef = useRef(actualFocusSecondsCompleted);
+  actualFocusSecondsRef.current = actualFocusSecondsCompleted;
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   // Calculated timeline schedule based on setup
   const currentSchedule: FocusTimelineSchedule = useMemo(() => {
@@ -239,24 +248,22 @@ export const FocusTimerPage: React.FC = () => {
     sessionStartTime,
   ]);
 
-  // Background away detection: when user switches tabs or minimizes
+  // Background away detection: when user switches tabs or leaves the page
+  // Immediately records departure when tab is hidden, and immediately shows prompt when user returns.
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Stepped away
-        if (status === 'running' || status === 'break') {
+        // Tab hidden / switched away: record departure timestamp immediately if running
+        if (statusRef.current === 'running') {
           awayTimestampRef.current = Date.now();
         }
       } else {
-        // Returned
-        if (awayTimestampRef.current && (status === 'running' || status === 'break')) {
-          const awaySecs = Math.floor((Date.now() - awayTimestampRef.current) / 1000);
+        // Tab visible / user returned: immediately show prompt if departed while running
+        if (awayTimestampRef.current && statusRef.current === 'running') {
+          const awaySecs = Math.max(1, Math.floor((Date.now() - awayTimestampRef.current) / 1000));
           awayTimestampRef.current = null;
-          // If away for more than 45 seconds during focus, prompt to confirm intent
-          if (awaySecs >= 45 && status === 'running') {
-            setSteppedAwaySeconds(awaySecs);
-            setShowSteppedAwayModal(true);
-          }
+          setSteppedAwaySeconds(awaySecs);
+          setShowSteppedAwayModal(true);
         }
       }
     };
@@ -265,7 +272,7 @@ export const FocusTimerPage: React.FC = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [status]);
+  }, []);
 
   // Main countdown tick loop (1 second interval)
   useEffect(() => {
@@ -395,14 +402,20 @@ export const FocusTimerPage: React.FC = () => {
     setStatus(interrupted ? 'interrupted' : 'completed');
     clearActiveFocusSession();
 
-    // Actual pure focused minutes (break time strictly excluded)
-    const pureFocusedMinutes = Math.max(
-      interrupted ? 1 : Math.round(focusDurationMinutes * 0.2),
-      Math.round(actualFocusSecondsCompleted / 60)
-    );
+    // Actual pure focused minutes:
+    // If completed naturally: the full selected duration was achieved (e.g. 45m, 60m, 125m, 150m)
+    // If interrupted: the actual focus seconds accumulated before leaving, or minimum 1m
+    const currentSelectedDuration = focusDurationMinutesRef.current;
+    const currentActualFocusSecs = actualFocusSecondsRef.current;
+    
+    const pureFocusedMinutes = interrupted
+      ? Math.max(1, Math.round(currentActualFocusSecs / 60))
+      : currentSelectedDuration;
 
-    const totalElapsedSecs = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : actualFocusSecondsCompleted;
-    const totalElapsedMins = Math.max(1, Math.round(totalElapsedSecs / 60));
+    const totalElapsedSecs = sessionStartTime
+      ? Math.max(pureFocusedMinutes * 60, Math.floor((Date.now() - sessionStartTime) / 1000))
+      : pureFocusedMinutes * 60;
+    const totalElapsedMins = Math.max(pureFocusedMinutes, Math.round(totalElapsedSecs / 60));
 
     if (!interrupted) {
       confetti({
@@ -423,7 +436,7 @@ export const FocusTimerPage: React.FC = () => {
     });
 
     try {
-      const notesSummary = `Scheduled: ${focusDurationMinutes}m | Breaks taken: ${breaksTakenCount} | Breaks skipped: ${breaksSkippedCount} | Total elapsed: ${totalElapsedMins}m${
+      const notesSummary = `Scheduled: ${currentSelectedDuration}m | Breaks taken: ${breaksTakenCount} | Breaks skipped: ${breaksSkippedCount} | Total elapsed: ${totalElapsedMins}m${
         interrupted ? ' (Interrupted early)' : ' (Completed)'
       }`;
 
@@ -431,7 +444,7 @@ export const FocusTimerPage: React.FC = () => {
         user_id: 'user',
         subject_id: selectedSubjectId || null,
         task_id: selectedTaskId || null,
-        duration_minutes: focusDurationMinutes,
+        duration_minutes: currentSelectedDuration,
         actual_minutes: pureFocusedMinutes,
         mode: 'pomodoro',
         notes: notesSummary,
@@ -982,7 +995,9 @@ export const FocusTimerPage: React.FC = () => {
                 You stepped away from StudyFlow
               </h3>
               <p className="text-xs text-charcoal-muted dark:text-slate-400">
-                You were inactive or away for approximately {Math.round(steppedAwaySeconds / 60)} minutes. Would you like to continue focusing or end your session?
+                {steppedAwaySeconds >= 60
+                  ? `You stepped away for approximately ${Math.round(steppedAwaySeconds / 60)} minute${Math.round(steppedAwaySeconds / 60) === 1 ? '' : 's'}. Would you like to continue focusing or end your session?`
+                  : 'You switched away from the StudyFlow window. Would you like to continue focusing or end your session?'}
               </p>
             </div>
 
