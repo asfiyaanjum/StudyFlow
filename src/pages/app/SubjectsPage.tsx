@@ -32,6 +32,7 @@ export const SubjectsPage: React.FC = () => {
 
   // Subject Modal
   const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [subjectName, setSubjectName] = useState('');
   const [subjectCode, setSubjectCode] = useState('');
   const [subjectColor, setSubjectColor] = useState('#6366f1');
@@ -40,12 +41,14 @@ export const SubjectsPage: React.FC = () => {
 
   // Unit Modal
   const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
+  const [editingUnit, setEditingUnit] = useState<SyllabusUnit | null>(null);
   const [unitTitle, setUnitTitle] = useState('');
   const [unitNumber, setUnitNumber] = useState(1);
   const [unitDescription, setUnitDescription] = useState('');
 
   // Topic Modal
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
+  const [editingTopic, setEditingTopic] = useState<SyllabusTopic | null>(null);
   const [targetUnitId, setTargetUnitId] = useState('');
   const [topicTitle, setTopicTitle] = useState('');
   const [topicEstMinutes, setTopicEstMinutes] = useState(45);
@@ -99,26 +102,94 @@ export const SubjectsPage: React.FC = () => {
     });
   };
 
-  // Create Subject
-  const handleCreateSubject = async (e: React.FormEvent) => {
+  // Helpers to open modals in create vs edit mode
+  const openCreateSubject = () => {
+    setEditingSubject(null);
+    setSubjectName('');
+    setSubjectCode('');
+    setSubjectColor('#6366f1');
+    setCreditHours(3);
+    setInstructor('');
+    setIsSubjectModalOpen(true);
+  };
+
+  const openEditSubject = (sub: Subject) => {
+    setEditingSubject(sub);
+    setSubjectName(sub.name);
+    setSubjectCode(sub.code || '');
+    setSubjectColor(sub.color || '#6366f1');
+    setCreditHours(sub.credit_hours || 3);
+    setInstructor(sub.instructor || '');
+    setIsSubjectModalOpen(true);
+  };
+
+  const openCreateUnit = () => {
+    setEditingUnit(null);
+    setUnitTitle('');
+    setUnitNumber(syllabusUnits.length + 1);
+    setUnitDescription('');
+    setIsUnitModalOpen(true);
+  };
+
+  const openEditUnit = (unit: SyllabusUnit) => {
+    setEditingUnit(unit);
+    setUnitTitle(unit.title);
+    setUnitNumber(unit.unit_number);
+    setUnitDescription(unit.description || '');
+    setIsUnitModalOpen(true);
+  };
+
+  const openCreateTopic = (unitId: string) => {
+    setEditingTopic(null);
+    setTargetUnitId(unitId);
+    setTopicTitle('');
+    setTopicEstMinutes(45);
+    setIsTopicModalOpen(true);
+  };
+
+  const openEditTopic = (unitId: string, topic: SyllabusTopic) => {
+    setEditingTopic(topic);
+    setTargetUnitId(unitId);
+    setTopicTitle(topic.title);
+    setTopicEstMinutes(topic.estimated_minutes || 45);
+    setIsTopicModalOpen(true);
+  };
+
+  // Create / Update Subject
+  const handleSaveSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subjectName.trim()) return;
 
     try {
-      const created = await api.subjects.createSubject({
-        user_id: 'user',
-        name: subjectName,
-        code: subjectCode,
-        color: subjectColor,
-        credit_hours: Number(creditHours),
-        instructor,
-      });
-      success('Subject Created', `Added ${subjectName} to your curriculum.`);
-      setIsSubjectModalOpen(false);
-      setSubjectName('');
-      setSubjectCode('');
-      await loadData();
-      handleSelectSubject(created);
+      if (editingSubject) {
+        const updated = await api.subjects.updateSubject(editingSubject.id, {
+          name: subjectName,
+          code: subjectCode,
+          color: subjectColor,
+          credit_hours: Number(creditHours),
+          instructor,
+        });
+        success('Subject Updated', `Updated ${subjectName}.`);
+        setIsSubjectModalOpen(false);
+        setEditingSubject(null);
+        await loadData();
+        handleSelectSubject(updated);
+      } else {
+        const created = await api.subjects.createSubject({
+          user_id: 'user',
+          name: subjectName,
+          code: subjectCode,
+          color: subjectColor,
+          credit_hours: Number(creditHours),
+          instructor,
+        });
+        success('Subject Created', `Added ${subjectName} to your curriculum.`);
+        setIsSubjectModalOpen(false);
+        setSubjectName('');
+        setSubjectCode('');
+        await loadData();
+        handleSelectSubject(created);
+      }
     } catch (err: any) {
       toastError('Error', err.message);
     }
@@ -135,21 +206,32 @@ export const SubjectsPage: React.FC = () => {
     }
   };
 
-  // Create Unit
-  const handleCreateUnit = async (e: React.FormEvent) => {
+  // Create / Update Unit
+  const handleSaveUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubject || !unitTitle.trim()) return;
 
     try {
-      await api.syllabus.createUnit({
-        user_id: 'user',
-        subject_id: selectedSubject.id,
-        title: unitTitle,
-        unit_number: Number(unitNumber),
-        description: unitDescription,
-      });
-      success('Unit Added', `Unit ${unitNumber} added to ${selectedSubject.name}.`);
-      setIsUnitModalOpen(false);
+      if (editingUnit) {
+        await api.syllabus.updateUnit(editingUnit.id, {
+          title: unitTitle,
+          unit_number: Number(unitNumber),
+          description: unitDescription,
+        });
+        success('Unit Updated', `Unit ${unitNumber} updated.`);
+        setIsUnitModalOpen(false);
+        setEditingUnit(null);
+      } else {
+        await api.syllabus.createUnit({
+          user_id: 'user',
+          subject_id: selectedSubject.id,
+          title: unitTitle,
+          unit_number: Number(unitNumber),
+          description: unitDescription,
+        });
+        success('Unit Added', `Unit ${unitNumber} added to ${selectedSubject.name}.`);
+        setIsUnitModalOpen(false);
+      }
       setUnitTitle('');
       setUnitDescription('');
       const updated = await api.syllabus.getUnits(selectedSubject.id);
@@ -170,21 +252,31 @@ export const SubjectsPage: React.FC = () => {
     }
   };
 
-  // Create Topic
-  const handleCreateTopic = async (e: React.FormEvent) => {
+  // Create / Update Topic
+  const handleSaveTopic = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetUnitId || !topicTitle.trim()) return;
 
     try {
-      await api.syllabus.createTopic({
-        user_id: 'user',
-        unit_id: targetUnitId,
-        title: topicTitle,
-        estimated_minutes: Number(topicEstMinutes),
-        is_completed: false,
-      });
-      success('Topic Added', `Added "${topicTitle}".`);
-      setIsTopicModalOpen(false);
+      if (editingTopic) {
+        await api.syllabus.updateTopic(editingTopic.id, {
+          title: topicTitle,
+          estimated_minutes: Number(topicEstMinutes),
+        });
+        success('Topic Updated', `Updated "${topicTitle}".`);
+        setIsTopicModalOpen(false);
+        setEditingTopic(null);
+      } else {
+        await api.syllabus.createTopic({
+          user_id: 'user',
+          unit_id: targetUnitId,
+          title: topicTitle,
+          estimated_minutes: Number(topicEstMinutes),
+          is_completed: false,
+        });
+        success('Topic Added', `Added "${topicTitle}".`);
+        setIsTopicModalOpen(false);
+      }
       setTopicTitle('');
       if (selectedSubject) {
         const updated = await api.syllabus.getUnits(selectedSubject.id);
@@ -238,7 +330,7 @@ export const SubjectsPage: React.FC = () => {
             Organize course units, track discrete topics, and monitor exam readiness.
           </p>
         </div>
-        <Button onClick={() => setIsSubjectModalOpen(true)} leftIcon={<Plus size={16} />}>
+        <Button onClick={openCreateSubject} leftIcon={<Plus size={16} />}>
           Add Subject
         </Button>
       </div>
@@ -249,7 +341,7 @@ export const SubjectsPage: React.FC = () => {
           title="No enrolled subjects yet"
           subtitle="Add your course subjects (e.g. Algorithms, Linear Algebra) to begin mapping syllabus units."
           action={
-            <Button size="sm" onClick={() => setIsSubjectModalOpen(true)}>
+            <Button size="sm" onClick={openCreateSubject}>
               + Add First Subject
             </Button>
           }
@@ -336,18 +428,23 @@ export const SubjectsPage: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      setUnitNumber(syllabusUnits.length + 1);
-                      setIsUnitModalOpen(true);
-                    }}
+                    onClick={openCreateUnit}
                     leftIcon={<Plus size={14} />}
                   >
                     Add Unit
                   </Button>
+                  <button
+                    type="button"
+                    onClick={() => openEditSubject(selectedSubject)}
+                    className="p-2 text-charcoal-light hover:text-charcoal-primary dark:hover:text-white rounded-xl hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Edit Subject"
+                  >
+                    <Edit2 size={15} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteSubject(selectedSubject.id)}
@@ -416,7 +513,7 @@ export const SubjectsPage: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
                           <div className="w-24 text-right hidden sm:block">
                             <span className="text-[11px] font-semibold text-charcoal-primary dark:text-white">
                               {unitProgress}%
@@ -427,10 +524,9 @@ export const SubjectsPage: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setTargetUnitId(unit.id);
-                              setIsTopicModalOpen(true);
+                              openCreateTopic(unit.id);
                             }}
-                            className="p-1.5 rounded-lg border border-paper-border dark:border-slate-700 hover:bg-paper-100 text-charcoal-primary text-xs font-medium"
+                            className="p-1.5 rounded-lg border border-paper-border dark:border-slate-700 hover:bg-paper-100 dark:hover:bg-slate-800 text-charcoal-primary dark:text-white text-xs font-medium"
                             title="Add topic to this unit"
                           >
                             <Plus size={13} />
@@ -439,9 +535,20 @@ export const SubjectsPage: React.FC = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
+                              openEditUnit(unit);
+                            }}
+                            className="p-1.5 text-charcoal-light hover:text-charcoal-primary dark:hover:text-white rounded-lg hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Edit Unit"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               handleDeleteUnit(unit.id);
                             }}
-                            className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
+                            className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
                             title="Delete Unit"
                           >
                             <Trash2 size={13} />
@@ -477,16 +584,25 @@ export const SubjectsPage: React.FC = () => {
                                     {topic.title}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1 shrink-0">
                                   {topic.estimated_minutes && (
-                                    <span className="text-[10px] text-charcoal-light">
+                                    <span className="text-[10px] text-charcoal-light mr-1">
                                       ~{topic.estimated_minutes}m
                                     </span>
                                   )}
                                   <button
                                     type="button"
+                                    onClick={() => openEditTopic(unit.id, topic)}
+                                    className="text-charcoal-light hover:text-charcoal-primary dark:hover:text-white p-1 rounded hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
+                                    title="Edit Topic"
+                                  >
+                                    <Edit2 size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleDeleteTopic(topic.id)}
-                                    className="text-charcoal-light hover:text-rose-500 p-1"
+                                    className="text-charcoal-light hover:text-rose-500 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                                    title="Delete Topic"
                                   >
                                     <Trash2 size={12} />
                                   </button>
@@ -508,11 +624,14 @@ export const SubjectsPage: React.FC = () => {
       {/* Subject Modal */}
       <Modal
         isOpen={isSubjectModalOpen}
-        onClose={() => setIsSubjectModalOpen(false)}
-        title="Add Enrolled Subject"
-        description="Enter course details for your semester."
+        onClose={() => {
+          setIsSubjectModalOpen(false);
+          setEditingSubject(null);
+        }}
+        title={editingSubject ? 'Edit Subject' : 'Add Enrolled Subject'}
+        description={editingSubject ? 'Update subject details and curriculum settings.' : 'Enter course details for your semester.'}
       >
-        <form onSubmit={handleCreateSubject} className="space-y-4">
+        <form onSubmit={handleSaveSubject} className="space-y-4">
           <Input
             label="Subject Name"
             required
@@ -556,10 +675,10 @@ export const SubjectsPage: React.FC = () => {
             </div>
           </div>
           <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
-            <Button variant="ghost" type="button" onClick={() => setIsSubjectModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => { setIsSubjectModalOpen(false); setEditingSubject(null); }}>
               Cancel
             </Button>
-            <Button type="submit">Create Subject</Button>
+            <Button type="submit">{editingSubject ? 'Save Changes' : 'Create Subject'}</Button>
           </div>
         </form>
       </Modal>
@@ -567,11 +686,14 @@ export const SubjectsPage: React.FC = () => {
       {/* Unit Modal */}
       <Modal
         isOpen={isUnitModalOpen}
-        onClose={() => setIsUnitModalOpen(false)}
-        title={`Add Syllabus Unit (${selectedSubject?.name})`}
-        description="Define a major module or chapter in this syllabus."
+        onClose={() => {
+          setIsUnitModalOpen(false);
+          setEditingUnit(null);
+        }}
+        title={editingUnit ? `Edit Syllabus Unit #${editingUnit.unit_number}` : `Add Syllabus Unit (${selectedSubject?.name})`}
+        description={editingUnit ? 'Modify unit title, number, or topic outline.' : 'Define a major module or chapter in this syllabus.'}
       >
-        <form onSubmit={handleCreateUnit} className="space-y-4">
+        <form onSubmit={handleSaveUnit} className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
             <Input
               label="Unit #"
@@ -597,10 +719,10 @@ export const SubjectsPage: React.FC = () => {
             onChange={(e) => setUnitDescription(e.target.value)}
           />
           <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
-            <Button variant="ghost" type="button" onClick={() => setIsUnitModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => { setIsUnitModalOpen(false); setEditingUnit(null); }}>
               Cancel
             </Button>
-            <Button type="submit">Add Unit</Button>
+            <Button type="submit">{editingUnit ? 'Save Changes' : 'Add Unit'}</Button>
           </div>
         </form>
       </Modal>
@@ -608,11 +730,14 @@ export const SubjectsPage: React.FC = () => {
       {/* Topic Modal */}
       <Modal
         isOpen={isTopicModalOpen}
-        onClose={() => setIsTopicModalOpen(false)}
-        title="Add Syllabus Topic"
-        description="Add a discrete revision item to this unit."
+        onClose={() => {
+          setIsTopicModalOpen(false);
+          setEditingTopic(null);
+        }}
+        title={editingTopic ? 'Edit Syllabus Topic' : 'Add Syllabus Topic'}
+        description={editingTopic ? 'Update topic title or estimated revision duration.' : 'Add a discrete revision item to this unit.'}
       >
-        <form onSubmit={handleCreateTopic} className="space-y-4">
+        <form onSubmit={handleSaveTopic} className="space-y-4">
           <Input
             label="Topic Name"
             required
@@ -629,10 +754,10 @@ export const SubjectsPage: React.FC = () => {
             onChange={(e) => setTopicEstMinutes(Number(e.target.value))}
           />
           <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border dark:border-slate-800">
-            <Button variant="ghost" type="button" onClick={() => setIsTopicModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => { setIsTopicModalOpen(false); setEditingTopic(null); }}>
               Cancel
             </Button>
-            <Button type="submit">Add Topic</Button>
+            <Button type="submit">{editingTopic ? 'Save Changes' : 'Add Topic'}</Button>
           </div>
         </form>
       </Modal>

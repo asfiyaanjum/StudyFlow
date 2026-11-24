@@ -572,6 +572,30 @@ export const api = {
       if (error) throw error;
     },
 
+    async updateUnit(unitId: string, updates: Partial<SyllabusUnit>): Promise<SyllabusUnit> {
+      await requireAuthUser();
+      const { data, error } = await supabase
+        .from('syllabus_units')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', unitId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as SyllabusUnit;
+    },
+
+    async updateTopic(topicId: string, updates: Partial<SyllabusTopic>): Promise<SyllabusTopic> {
+      await requireAuthUser();
+      const { data, error } = await supabase
+        .from('syllabus_topics')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', topicId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as SyllabusTopic;
+    },
+
     async deleteTopic(topicId: string): Promise<void> {
       await requireAuthUser();
       const { error } = await supabase.from('syllabus_topics').delete().eq('id', topicId);
@@ -1040,8 +1064,14 @@ export const api = {
     async deleteUnit(unitId: string): Promise<void> {
       return api.subjects.deleteUnit(unitId);
     },
+    async updateUnit(unitId: string, updates: Partial<SyllabusUnit>): Promise<SyllabusUnit> {
+      return api.subjects.updateUnit(unitId, updates);
+    },
     async createTopic(topic: Omit<SyllabusTopic, 'id' | 'created_at' | 'updated_at'>): Promise<SyllabusTopic> {
       return api.subjects.createTopic(topic);
+    },
+    async updateTopic(topicId: string, updates: Partial<SyllabusTopic>): Promise<SyllabusTopic> {
+      return api.subjects.updateTopic(topicId, updates);
     },
     async toggleTopic(topicId: string): Promise<SyllabusTopic> {
       await requireAuthUser();

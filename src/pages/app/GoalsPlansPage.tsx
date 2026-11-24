@@ -45,6 +45,7 @@ export const GoalsPlansPage: React.FC = () => {
 
   // Goal Modal
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [goalTitle, setGoalTitle] = useState('');
   const [goalDesc, setGoalDesc] = useState('');
   const [goalType, setGoalType] = useState<GoalType>('exam_score');
@@ -54,6 +55,7 @@ export const GoalsPlansPage: React.FC = () => {
 
   // Plan Modal
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [planTitle, setPlanTitle] = useState('');
   const [planDesc, setPlanDesc] = useState('');
   const [planType, setPlanType] = useState<PlanType>('weekly');
@@ -92,25 +94,89 @@ export const GoalsPlansPage: React.FC = () => {
     setTargetDate(inAWeek);
   }, []);
 
+  const openCreateGoal = () => {
+    setEditingGoal(null);
+    setGoalTitle('');
+    setGoalDesc('');
+    setGoalType('exam_score');
+    setGoalSubjectId(subjects[0]?.id || '');
+    const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    setTargetDate(inAWeek);
+    setProgressPct(0);
+    setIsGoalModalOpen(true);
+  };
+
+  const openEditGoal = (goal: Goal) => {
+    setEditingGoal(goal);
+    setGoalTitle(goal.title);
+    setGoalDesc(goal.description || '');
+    setGoalType(goal.goal_type);
+    setGoalSubjectId(goal.subject_id || '');
+    setTargetDate(goal.target_date.split('T')[0]);
+    setProgressPct(goal.progress_percentage);
+    setIsGoalModalOpen(true);
+  };
+
+  const openCreatePlan = () => {
+    setEditingPlan(null);
+    setPlanTitle('');
+    setPlanDesc('');
+    setPlanType('weekly');
+    setPlanSubjectId(subjects[0]?.id || '');
+    const today = new Date().toISOString().split('T')[0];
+    setStartDate(today);
+    const inAWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    setEndDate(inAWeek);
+    setPlanNotes('');
+    setIsPlanModalOpen(true);
+  };
+
+  const openEditPlan = (plan: Plan) => {
+    setEditingPlan(plan);
+    setPlanTitle(plan.title);
+    setPlanDesc(plan.description || '');
+    setPlanType(plan.plan_type);
+    setPlanSubjectId(plan.subject_id || '');
+    setStartDate(plan.start_date.split('T')[0]);
+    setEndDate(plan.end_date.split('T')[0]);
+    const { notes } = parsePlanMilestones(plan.content);
+    setPlanNotes(notes || '');
+    setIsPlanModalOpen(true);
+  };
+
   // Goal Handlers
-  const handleCreateGoal = async (e: React.FormEvent) => {
+  const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!goalTitle.trim()) return;
 
     try {
-      const created = await api.goals.createGoal({
-        user_id: 'user',
-        title: goalTitle,
-        description: goalDesc,
-        goal_type: goalType,
-        subject_id: goalSubjectId || null,
-        target_date: targetDate,
-        progress_percentage: Number(progressPct),
-        status: 'active',
-      });
-      setGoals((prev) => [created, ...prev]);
-      success('Goal Created', `Added goal: "${goalTitle}"`);
+      if (editingGoal) {
+        const updated = await api.goals.updateGoal(editingGoal.id, {
+          title: goalTitle,
+          description: goalDesc,
+          goal_type: goalType,
+          subject_id: goalSubjectId || null,
+          target_date: targetDate,
+          progress_percentage: Number(progressPct),
+        });
+        setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+        success('Goal Updated', `Updated goal: "${goalTitle}"`);
+      } else {
+        const created = await api.goals.createGoal({
+          user_id: 'user',
+          title: goalTitle,
+          description: goalDesc,
+          goal_type: goalType,
+          subject_id: goalSubjectId || null,
+          target_date: targetDate,
+          progress_percentage: Number(progressPct),
+          status: 'active',
+        });
+        setGoals((prev) => [created, ...prev]);
+        success('Goal Created', `Added goal: "${goalTitle}"`);
+      }
       setIsGoalModalOpen(false);
+      setEditingGoal(null);
       setGoalTitle('');
       setGoalDesc('');
     } catch (err: any) {
@@ -130,31 +196,48 @@ export const GoalsPlansPage: React.FC = () => {
   };
 
   // Plan Handlers
-  const handleCreatePlan = async (e: React.FormEvent) => {
+  const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!planTitle.trim()) return;
 
     try {
-      const initialMilestones: Milestone[] = [
-        { id: `m-${Date.now()}-1`, title: 'Review key chapter notes', completed: false, order: 0 },
-        { id: `m-${Date.now()}-2`, title: 'Complete practice problem sets', completed: false, order: 1 },
-      ];
-      const serializedContent = serializePlanMilestones(initialMilestones, planNotes);
+      if (editingPlan) {
+        const { milestones } = parsePlanMilestones(editingPlan.content);
+        const updatedContent = serializePlanMilestones(milestones, planNotes);
+        const updated = await api.plans.updatePlan(editingPlan.id, {
+          title: planTitle,
+          description: planDesc,
+          plan_type: planType,
+          subject_id: planSubjectId || null,
+          start_date: startDate,
+          end_date: endDate,
+          content: updatedContent,
+        });
+        setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        success('Study Plan Updated', `Updated plan: "${planTitle}"`);
+      } else {
+        const initialMilestones: Milestone[] = [
+          { id: `m-${Date.now()}-1`, title: 'Review key chapter notes', completed: false, order: 0 },
+          { id: `m-${Date.now()}-2`, title: 'Complete practice problem sets', completed: false, order: 1 },
+        ];
+        const serializedContent = serializePlanMilestones(initialMilestones, planNotes);
 
-      const created = await api.plans.createPlan({
-        user_id: 'user',
-        title: planTitle,
-        description: planDesc,
-        plan_type: planType,
-        subject_id: planSubjectId || null,
-        start_date: startDate,
-        end_date: endDate,
-        content: serializedContent,
-        is_active: true,
-      });
-      setPlans((prev) => [created, ...prev]);
-      success('Study Plan Created', `Created plan: "${planTitle}"`);
+        const created = await api.plans.createPlan({
+          user_id: 'user',
+          title: planTitle,
+          description: planDesc,
+          plan_type: planType,
+          subject_id: planSubjectId || null,
+          start_date: startDate,
+          end_date: endDate,
+          content: serializedContent,
+          is_active: true,
+        });
+        setPlans((prev) => [created, ...prev]);
+        success('Study Plan Created', `Created plan: "${planTitle}"`);
+      }
       setIsPlanModalOpen(false);
+      setEditingPlan(null);
       setPlanTitle('');
       setPlanDesc('');
       setPlanNotes('');
@@ -229,11 +312,11 @@ export const GoalsPlansPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           {activeView === 'plans' ? (
-            <Button onClick={() => setIsPlanModalOpen(true)} leftIcon={<Plus size={16} />}>
+            <Button onClick={openCreatePlan} leftIcon={<Plus size={16} />}>
               Create Study Plan
             </Button>
           ) : (
-            <Button onClick={() => setIsGoalModalOpen(true)} leftIcon={<Plus size={16} />}>
+            <Button onClick={openCreateGoal} leftIcon={<Plus size={16} />}>
               Set Academic Goal
             </Button>
           )}
@@ -273,7 +356,7 @@ export const GoalsPlansPage: React.FC = () => {
               title="No study plans created"
               subtitle="Map out your weekly revision or subject mastery plans with granular sub-milestones."
               action={
-                <Button size="sm" onClick={() => setIsPlanModalOpen(true)}>
+                <Button size="sm" onClick={openCreatePlan}>
                   + Create First Study Plan
                 </Button>
               }
@@ -310,14 +393,24 @@ export const GoalsPlansPage: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePlan(plan.id)}
-                        className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
-                        title="Delete Plan"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditPlan(plan)}
+                          className="p-1.5 text-charcoal-light hover:text-charcoal-primary dark:hover:text-white rounded-lg hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Edit Plan"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePlan(plan.id)}
+                          className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          title="Delete Plan"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Progress Bar */}
@@ -400,7 +493,7 @@ export const GoalsPlansPage: React.FC = () => {
               title="No semester goals set"
               subtitle="Define target test scores, weekly study hours, or GPA milestones to stay focused."
               action={
-                <Button size="sm" onClick={() => setIsGoalModalOpen(true)}>
+                <Button size="sm" onClick={openCreateGoal}>
                   + Set First Goal
                 </Button>
               }
@@ -421,13 +514,24 @@ export const GoalsPlansPage: React.FC = () => {
                         {goal.title}
                       </h4>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteGoal(goal.id)}
-                      className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditGoal(goal)}
+                        className="p-1.5 text-charcoal-light hover:text-charcoal-primary dark:hover:text-white rounded-lg hover:bg-paper-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Edit Goal"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGoal(goal.id)}
+                        className="p-1.5 text-charcoal-light hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                        title="Delete Goal"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
 
                   {goal.description && (
@@ -458,11 +562,14 @@ export const GoalsPlansPage: React.FC = () => {
       {/* Goal Modal */}
       <Modal
         isOpen={isGoalModalOpen}
-        onClose={() => setIsGoalModalOpen(false)}
-        title="Set Academic Goal"
-        description="Establish a clear semester benchmark."
+        onClose={() => {
+          setIsGoalModalOpen(false);
+          setEditingGoal(null);
+        }}
+        title={editingGoal ? 'Edit Academic Goal' : 'Set Academic Goal'}
+        description={editingGoal ? 'Update your target goal metrics and completion timeline.' : 'Establish a clear semester benchmark.'}
       >
-        <form onSubmit={handleCreateGoal} className="space-y-4">
+        <form onSubmit={handleSaveGoal} className="space-y-4">
           <Input
             label="Goal Title"
             required
@@ -510,10 +617,10 @@ export const GoalsPlansPage: React.FC = () => {
             onChange={(e) => setProgressPct(Number(e.target.value))}
           />
           <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border">
-            <Button variant="ghost" type="button" onClick={() => setIsGoalModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => { setIsGoalModalOpen(false); setEditingGoal(null); }}>
               Cancel
             </Button>
-            <Button type="submit">Set Goal</Button>
+            <Button type="submit">{editingGoal ? 'Save Changes' : 'Set Goal'}</Button>
           </div>
         </form>
       </Modal>
@@ -521,11 +628,14 @@ export const GoalsPlansPage: React.FC = () => {
       {/* Plan Modal */}
       <Modal
         isOpen={isPlanModalOpen}
-        onClose={() => setIsPlanModalOpen(false)}
-        title="Create Study Plan"
-        description="Plan out structured revision with milestones."
+        onClose={() => {
+          setIsPlanModalOpen(false);
+          setEditingPlan(null);
+        }}
+        title={editingPlan ? 'Edit Study Plan' : 'Create Study Plan'}
+        description={editingPlan ? 'Update plan dates, focus subjects, and summary.' : 'Plan out structured revision with milestones.'}
       >
-        <form onSubmit={handleCreatePlan} className="space-y-4">
+        <form onSubmit={handleSavePlan} className="space-y-4">
           <Input
             label="Plan Title"
             required
@@ -590,10 +700,10 @@ export const GoalsPlansPage: React.FC = () => {
             />
           </div>
           <div className="flex justify-end gap-2.5 pt-4 border-t border-paper-border">
-            <Button variant="ghost" type="button" onClick={() => setIsPlanModalOpen(false)}>
+            <Button variant="ghost" type="button" onClick={() => { setIsPlanModalOpen(false); setEditingPlan(null); }}>
               Cancel
             </Button>
-            <Button type="submit">Create Plan</Button>
+            <Button type="submit">{editingPlan ? 'Save Changes' : 'Create Plan'}</Button>
           </div>
         </form>
       </Modal>
