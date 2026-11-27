@@ -2,6 +2,10 @@
 
 > **"Plan smarter. Study consistently. Stay ahead."**
 
+🔗 **[Live Demo](https://study-flow-live.vercel.app/)**
+
+![StudyFlow Dashboard](screenshots/dashboard.png)
+
 StudyFlow is a complete, production-grade Student Productivity and Academic Management SaaS. Unlike generic note-taking tools, StudyFlow is purpose-built for college students, engineering undergraduates, and competitive exam candidates who need an active academic execution engine.
 
 ---
